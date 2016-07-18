@@ -15,3 +15,6 @@ instructions:
 https://github.com/mcafee/postgresql-audit/wiki
 
 (Coming Soon!)
+
+
+<sup>*</sup> Other trademarks and brands may be claimed as the property of others.
