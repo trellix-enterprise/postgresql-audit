@@ -70,7 +70,7 @@ bool json_file_handler_enable = true;
 
 // GUC variable for isecg_audit.json_file_name
 // char *json_file_name = NULL;
-#define DEFAULT_JSON_FILENAME	"/tmp/isecgaudit.json"
+#define DEFAULT_JSON_FILENAME	"isecgaudit.json"
 
 // GUC variable for isecg_audit.json_unix_socket - true / false
 bool json_unix_socket_handler_enable = false;

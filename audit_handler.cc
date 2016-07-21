@@ -216,8 +216,10 @@ int Audit_file_handler::open(const char *io_dest, bool log_errors)
 		}
 		return -1;
 	}
-	const int perms = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-	(void) fchmod(fileno(m_log_file), perms);	// -rw-r--r--
+
+	// log file could have sensitive info, don't allow other read perm.
+	const int perms = S_IRUSR | S_IWUSR | S_IRGRP;	// -rw-r-----
+	(void) fchmod(fileno(m_log_file), perms);
 
 	ssize_t bufsize = BUFSIZ;
 	int res = 0;
