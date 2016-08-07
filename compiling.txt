@@ -1,0 +1,37 @@
+Compiling the Audit Plugin for PostgreSQL
+=========================================
+
+0. Prerequisites. Be sure you have the following installed:
+	Autoconf --- At least version 2.69
+	Automake --- At least version 1.14.1
+	Libtool --- At least version 2.4.6
+
+1. Download a tarball of the source code for the version of
+PostgreSQL that you are using.  The Audit plugin is supported on
+version 9.2.13 and forward, and versions 9.3.x, 9.4.x and 9.5.x.
+For example, assume that you are compiling against version 9.5.0.
+
+2. Extract the tarball:
+
+	tar -xpjf postgresql-9.5.0.tar.bz2
+
+3. Configure the code and set up the include directories so that the
+plugin code can find them:
+
+	cd postgresql-9.5.0
+	./configure --without-readline --without-zlib
+	(cd src/backend ; make submake-errcodes)
+
+4. Go to the contrib directory and clone the repo from Github:
+
+	cd contrib
+	git clone https://github.com/mcafee/postgresql-audit.git 
+
+5. Go into the plugin directory, configure and build
+
+	cd postgresql-audit
+	./bootstrap.sh
+	./configure
+	make
+
+The plugin will be in src/audit.so.
