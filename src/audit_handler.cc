@@ -14,12 +14,11 @@
 #include <unistd.h>
 #include <string>
 
-#include "static_assert.h"
 #include "sql_print.h"
 
 #include "audit_handler.h"
 
-// in isecg_audit.cc
+// in audit.cc
 extern char *getFullObjectName(const RangeVar *rangevar);
 
 // initialize static stuff
@@ -497,7 +496,7 @@ ssize_t Audit_json_formatter::start_msg_format(IWriter *writer)
 	}
 
 	// initialize yajl
-	yajl_gen gen = yajl_gen_alloc(&config, NULL);
+	yajl_gen gen = yajl_gen_alloc(NULL);
 	yajl_gen_map_open(gen);
 	yajl_add_string_val(gen, "msg-type", "header");
 
@@ -548,7 +547,7 @@ ssize_t Audit_json_formatter::start_msg_format(IWriter *writer)
 	if (stat == yajl_gen_status_ok) // all is good write the buffer out
 	{
 		const unsigned char *text = NULL;
-		unsigned int len = 0;
+		size_t len = 0;
 		yajl_gen_get_buf(gen, &text, &len);
 		// print the json
 		res = writer->write((const char *)text, len);
@@ -684,7 +683,7 @@ static const char *get_database_name()
 ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStackItem *pItem, IWriter *writer)
 {
 	// initialize yajl
-	yajl_gen gen = yajl_gen_alloc(&config, NULL);
+	yajl_gen gen = yajl_gen_alloc(NULL);
 	yajl_gen_map_open(gen);
 	yajl_add_string_val(gen, "msg-type", "activity");
 	uint64 ts = get_current_time_in_ms();
@@ -839,7 +838,7 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 	if (stat == yajl_gen_status_ok) // all is good write the buffer out
 	{
 		const unsigned char *text = NULL;
-		unsigned int len = 0;
+		size_t len = 0;
 		yajl_gen_get_buf(gen, &text, &len);
 		// print the json
 		res = writer->write((const char *)text, len);
@@ -856,7 +855,7 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 // centralize YAJL handling
 ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer)
 {
-	yajl_gen gen = yajl_gen_alloc(&config, NULL);
+	yajl_gen gen = yajl_gen_alloc(NULL);
 	yajl_gen_map_open(gen);
 	yajl_add_string_val(gen, "msg-type", "activity");
 	uint64 ts = get_current_time_in_ms();
@@ -878,7 +877,7 @@ ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *
 	if (stat == yajl_gen_status_ok) // all is good write the buffer out
 	{
 		const unsigned char *text = NULL;
-		unsigned int len = 0;
+		size_t len = 0;
 		yajl_gen_get_buf(gen, &text, &len);
 		// print the json
 		res = writer->write((const char *)text, len);
@@ -1149,7 +1148,7 @@ const char *Audit_utils::plugin_socket_name()
 		db_sock = port_number;
 	}
 
-	len = strlen(name_prefix) + strlen(cwd_buff) + strlen(db_sock);
+	len = strlen(name_prefix) + strlen(cwd_buff) + strlen(db_sock) + 1;
 	if (len < sizeof(name_buff))
 	{
 		sprintf(name_buff, "%s%s%s", name_prefix, cwd_buff, db_sock);

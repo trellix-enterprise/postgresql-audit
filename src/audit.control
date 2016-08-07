@@ -1,5 +1,5 @@
-# isecg_audit extension
+# audit extension
 comment = 'Intel Security Group plugin that provides auditing functionality'
 default_version = '1.0'
-module_pathname = '$libdir/isecg_audit'
+module_pathname = '$libdir/audit'
 relocatable = true

@@ -13,7 +13,6 @@
 #define AUDIT_HANDLER_H_
 
 #include <time.h>
-#include <pthread.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -126,8 +125,6 @@ public:
 		m_perform_password_masking(NULL)
 	{
 		// elog(LOG, "%s:%d:%d: Audit_json_formatter constructor called", __FILE__, __LINE__, getpid());
-		config.beautify = 0;
-		config.indentString = NULL;
 	}
 
 	virtual ~Audit_json_formatter()
@@ -177,11 +174,6 @@ public:
 	 * We only support a delimiter up to 32 chars
 	 */
 	char *m_msg_delimiter;
-
-	/**
-	 * Configuration of yajl. Leave public so sysvar can update this directly.
-	 */
-	yajl_gen_config config;
 
 protected:
 
@@ -248,8 +240,6 @@ public:
 
 	/**
 	 * Should be called to initialize.
-	 * We don't init in constructor in order to provide indication if
-	 * pthread stuff failed init.
 	 *
 	 * @frmt the formatter to use in this handler (does not manage
 	 * destruction of this object)

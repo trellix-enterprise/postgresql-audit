@@ -20,8 +20,8 @@ extern bool audit_logging;
 
 /*
  * To enable plugin debug logs:
- * 	1. build 'isecg_audit.so' with 'PG_CPPFLAGS += -DPLUGIN_DEBUG' (in Makefile.pg.in)
- * 	2. add 'isecgaudit.debug_logs = 1' in postgresql.conf file
+ * 	1. build 'audit.so' with 'PG_CPPFLAGS += -DPLUGIN_DEBUG' (in Makefile.pg.in)
+ * 	2. add 'audit.debug_logs = 1' in postgresql.conf file
  * 	3. enable PostgreSQL logging from requested log level (since our macros using elog() )
  */
 #ifdef PLUGIN_DEBUG

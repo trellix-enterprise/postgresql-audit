@@ -1,7 +1,7 @@
-/* postgresql-audit/isecg_audit--1.0.sql */
+/* postgresql-audit/audit--1.0.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION isecg_audit" to load this file.\quit
+\echo Use "CREATE EXTENSION audit" to load this file.\quit
 
 -- FIXME: Temporarily, enable the pgaudit functions. We may need them.
 CREATE FUNCTION pgaudit_ddl_command_end()

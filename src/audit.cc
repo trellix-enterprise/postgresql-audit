@@ -65,23 +65,23 @@ static Audit_json_formatter json_formatter;
 
 // GUC Variables
 
-// GUC variable for isecg_audit.json_file - true / false
+// GUC variable for audit.json_file - true / false
 bool json_file_handler_enable = true;
 
-// GUC variable for isecg_audit.json_file_name
+// GUC variable for audit.json_file_name
 // char *json_file_name = NULL;
-#define DEFAULT_JSON_FILENAME	"isecgaudit.json"
+#define DEFAULT_JSON_FILENAME	"audit.json"
 
-// GUC variable for isecg_audit.json_unix_socket - true / false
+// GUC variable for audit.json_unix_socket - true / false
 bool json_unix_socket_handler_enable = false;
 
-// GUC variable for isecg_audit.json_unix_socket_name
+// GUC variable for audit.json_unix_socket_name
 // char *json_unix_socket_name = NULL;
 
-// GUC variable for isecg_audit.json_file_flush
+// GUC variable for audit.json_file_flush
 bool json_file_handler_flush = false;
 
-// GUC variable to enable/disable isecg_audit debug logs
+// GUC variable to enable/disable audit debug logs
 bool audit_logging = false;
 
 // plugin and protocol versions
@@ -92,8 +92,8 @@ static char *audit_protocol_version_ptr = audit_version;	// for CreateCustomStri
 
 
 // regex stuff
-char *password_masking_regex = NULL;
-pcre *password_mask_regex_preg = NULL;
+static char *password_masking_regex = NULL;
+static pcre *password_mask_regex_preg = NULL;
 
 #define _COMMENT_SPACE_ "(?:/\\*.*?\\*/|\\s)*?"
 #define _QUOTED_PSW_ "[\'|\"](?<psw>.*?)(?<!\\\\)[\'|\"]"
@@ -106,7 +106,7 @@ static const char default_pw_masking_regex[] = "password" _COMMENT_SPACE_ _QUOTE
 /* check_json_file_name --- check that new value passed for json_file_name is valid */
 
 extern "C" bool
-check_json_file_name(char **newVal, void **extra, GucSource source)
+check_json_file_name(char **newVal, void **extra, GucSource unused)
 {
 	char *newPath = NULL;
 
@@ -115,31 +115,20 @@ check_json_file_name(char **newVal, void **extra, GucSource source)
 		return false;
 	}
 
-	newPath = pstrdup(*newVal);
-	*extra = newPath;
-
-	return true;
-}
-
-/* assign_json_file_name --- assign a new value to json_file_name */
-
-extern "C" void
-assign_json_file_name(const char *newVal, void *extra)
-{
-	if (extra != NULL)
+	newPath = strdup(*newVal);
+	if (newPath != NULL)
 	{
-		if (json_file_handler.m_io_dest != NULL)
-		{
-			pfree(json_file_handler.m_io_dest);
-		}
-		json_file_handler.m_io_dest = (char *) extra;
+		*extra = newPath;
+		return true;
 	}
+
+	return false;
 }
 
 /* check_json_unix_socket_name --- check that new value passed for json_unix_socket_name is valid */
 
 extern "C" bool
-check_json_unix_socket_name(char **newVal, void **extra, GucSource source)
+check_json_unix_socket_name(char **newVal, void **extra, GucSource unused)
 {
 	char *newPath = NULL;
 
@@ -148,50 +137,14 @@ check_json_unix_socket_name(char **newVal, void **extra, GucSource source)
 		return false;
 	}
 
-	newPath = pstrdup(*newVal);
-	*extra = newPath;
-
-	return true;
-}
-
-// socket name
-static char json_socket_name_buff[1024] = {0};
-
-/* assign_json_unix_socket_name --- assign a new value to json_unix_socket_name */
-
-extern "C" void
-assign_json_unix_socket_name(const char *newVal, void *extra)
-{
-	if (extra != NULL)
+	newPath = strdup(*newVal);
+	if (newPath != NULL)
 	{
-		if (json_unix_socket_handler.m_io_dest != NULL
-		    && json_unix_socket_handler.m_io_dest != json_socket_name_buff)
-		{
-			pfree(json_unix_socket_handler.m_io_dest);
-		}
-
-		json_unix_socket_handler.m_io_dest = (char *) extra;
-		return;
-	}
-	else
-	{
-		const char *plugin_socket = Audit_utils::plugin_socket_name();
-
-		if (strlen(plugin_socket) <= sizeof(json_socket_name_buff) - 1)
-		{
-			strcpy(json_socket_name_buff, plugin_socket);
-			json_unix_socket_handler.m_io_dest = json_socket_name_buff;
-		}
-		else // should never happen
-		{
-			AUDIT_ERROR_LOG("json_socket_name_buff not big enough to set default name. buff: %s",
-					plugin_socket);
-			json_unix_socket_handler.m_io_dest = NULL;
-		}
+		*extra = newPath;
+		return true;
 	}
 
-	AUDIT_DEBUG_LOG("Set json_socket_name value: [%s]",
-		json_unix_socket_handler.m_io_dest ?  json_unix_socket_handler.m_io_dest : "null");
+	return false;
 }
 
 /* assign_json_file_flush --- assign a new value to json_file_flush */
@@ -212,82 +165,61 @@ assign_json_file_flush(bool newVal, void *extra)
 /* check_audit_version --- check that new value passed for audit_version is valid */
 
 extern "C" bool
-check_audit_version(char **newVal, void **extra, GucSource source)
+check_audit_version(char **newVal, void **extra, GucSource unused)
 {
 	return (strcmp(*newVal, audit_version) == 0);
-}
-
-/* assign_audit_version --- assign a new value to audit_version */
-
-extern "C" void
-assign_audit_version(const char *newVal, void *extra)
-{
-	return;	// don't allow changing this
 }
 
 /* check_audit_protocol_version --- check that new value passed for audit_protocol_version is valid */
 
 extern "C" bool
-check_audit_protocol_version(char **newVal, void **extra, GucSource source)
+check_audit_protocol_version(char **newVal, void **extra, GucSource unused)
 {
 	return (strcmp(*newVal, audit_protocol_version) == 0);
 }
 
-/* assign_audit_version --- assign a new value to audit_version */
-
-extern "C" void
-assign_audit_protocol_version(const char *newVal, void *extra)
-{
-	return;	// don't allow changing this
-}
-
-
 /* check_password_masking_regex --- check that new value passed for password_masking_regex is valid */
 
 extern "C" bool
-check_password_masking_regex(char **newVal, void **extra, GucSource source)
+check_password_masking_regex(char **newVal, void **extra, GucSource unused)
 {
-	char *str_val = NULL;
-	bool res;
-
 	if (newVal == NULL || *newVal == NULL)
 	{
 		return false;
 	}
 
-	str_val = (char *) pstrdup(*newVal);
-	res = json_formatter.compile_password_masking_regex(str_val);
-	if (! res)
+	bool res = false;
+	char *str_val = NULL;
+
+	str_val = (char *) strdup(*newVal);
+	if (str_val != NULL)
 	{
-		pfree((void *) str_val);
-		str_val = (char *) palloc(strlen(default_pw_masking_regex) + 1);
-		strcpy(str_val, default_pw_masking_regex);
+		res = json_formatter.compile_password_masking_regex(str_val);
+		if (! res)
+		{
+			free((void *) str_val);
+			str_val = (char *) malloc(strlen(default_pw_masking_regex) + 1);
+			if (str_val != NULL)
+			{
+				strcpy(str_val, default_pw_masking_regex);
+				*extra = (void *) str_val;
+				res = true;
+			}
+		}
+		else
+		{
+			// res is already true
+			*extra = (void *) str_val;
+		}
 	}
-	*extra = (void *) str_val;
 
 	return res;
-}
-
-/* assign_password_masking_regex --- assign a new value to password_masking_regex */
-
-extern "C" void
-assign_password_masking_regex(const char *newVal, void *extra)
-{
-	if (extra == NULL)
-	{
-		return;
-	}
-
-	const char *str_val = (char *) extra;
-	/* value was already validated as valid */
-
-	(void) json_formatter.compile_password_masking_regex(str_val);
 }
 
 /* check_whitelist_cmds --- check commands */
 
 extern "C" bool
-check_whitelist_cmds(char **newVal, void **extra, GucSource source)
+check_whitelist_cmds(char **newVal, void **extra, GucSource unused)
 {
 	char *newList = NULL;
 
@@ -296,7 +228,7 @@ check_whitelist_cmds(char **newVal, void **extra, GucSource source)
 		return false;
 	}
 
-	newList = pstrdup(*newVal);
+	newList = strdup(*newVal);
 	*extra = newList;
 
 	return true;
@@ -320,7 +252,7 @@ assign_whitelist_cmds(const char *newVal, void *extra)
 
 	if (whitelist_cmds_ptr)
 	{
-		pfree(whitelist_cmds_ptr);
+		free(whitelist_cmds_ptr);
 		whitelist_cmds_ptr = NULL;
 	}
 
@@ -337,28 +269,42 @@ assign_whitelist_cmds(const char *newVal, void *extra)
 	{
 		if (whitelist_cmds_array)
 		{
-			free(whitelist_cmds_array); //not using 'pfree', refer to below comment
+			free(whitelist_cmds_array);
 			whitelist_cmds_array = NULL;
 		}
-		/* 
-		 * using 'palloc' links the memory segment to a specific MemoryContext,
-		 * which during the process lifetime is getting released.
-		 * Thus whitelist_cmds_array is getting corrupted,
-		 * which causing the plugin crash randomly (Bug #1140218).
-		 * Workaround is to use malloc directly for this specific configuration variable.
-		 */
+
 		whitelist_cmds_array = (char **) malloc(newCount * sizeof(char *));
-		whitelist_cmds_count = newCount;
+		if (whitelist_cmds_array != NULL)
+		{
+			whitelist_cmds_count = newCount;
+		}
+		else
+		{
+			whitelist_cmds_count = 0;
+		}
 	}
 
-	int i = 0;
-	whitelist_cmds_array[i] = strdup(newVal);
-	for (char *cp = (char *) whitelist_cmds_array[0]; *cp != '\0'; cp++)
+	if (whitelist_cmds_count > 0)
 	{
-		if (*cp == ',')
+		int i = 0;
+
+		whitelist_cmds_array[i] = strdup(newVal);
+		if (whitelist_cmds_array[i] != NULL)
 		{
-			whitelist_cmds_array[++i] = cp + 1;
-			*cp = '\0';
+			for (char *cp = (char *) whitelist_cmds_array[0]; *cp != '\0'; cp++)
+			{
+				if (*cp == ',')
+				{
+					whitelist_cmds_array[++i] = cp + 1;
+					*cp = '\0';
+				}
+			}
+		}
+		else
+		{
+			free(whitelist_cmds_array);
+			whitelist_cmds_array = NULL;
+			whitelist_cmds_count = 0;
 		}
 	}
 }
@@ -650,7 +596,7 @@ stack_pop(int64 stackId)
 	else
 	{
 		// not using log level WARNING directly, so log message will not be presented to client but only to server log
-		AUDIT_DEBUG_LOG("WARNING: isecgaudit stack item " INT64_FORMAT " not found on top - cannot pop",
+		AUDIT_DEBUG_LOG("WARNING: audit stack item " INT64_FORMAT " not found on top - cannot pop",
 				stackId);
 	}
 }
@@ -676,7 +622,7 @@ stack_valid(int64 stackId)
 	if (nextItem == NULL)
 	{
 		// not using log level WARNING directly, so log message will not be presented to client but only to server log
-		AUDIT_DEBUG_LOG("WARNING: isecgaudit stack item " INT64_FORMAT
+		AUDIT_DEBUG_LOG("WARNING: audit stack item " INT64_FORMAT
 				" not found - top of stack is " INT64_FORMAT "",
 				stackId,
 				auditEventStack == NULL ? (int64) -1 : auditEventStack->stackId);
@@ -955,7 +901,7 @@ log_audit_event(AuditEventStackItem *stackItem)
 				"<previously logged>,<previously logged>");
 	}
 
-	// isecg_audit: set info, call our audit handler
+	// audit: set info, call our audit handler
 	stackItem->auditEvent.className = className;
 
 	// check for commands in the whitelist, skip them if found
@@ -1154,7 +1100,7 @@ audit_on_attribute(Oid relOid,
 	eventptr->auditEvent.command = command_value;
 
 // Collect common event initialization into macros to keep things synchronized.
-// Applies to log_select_dml() and to isecgaudit_ExecutorStart_hook().
+// Applies to log_select_dml() and to audit_ExecutorStart_hook().
 #define initialize_select_event(eventptr) initialize_event(eventptr, LOGSTMT_ALL, T_SelectStmt, COMMAND_SELECT)
 #define initialize_insert_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_InsertStmt, COMMAND_INSERT)
 #define initialize_update_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_UpdateStmt, COMMAND_UPDATE)
@@ -1510,9 +1456,9 @@ static bool initHandlers(Port *port, PostgreSQL_proc *proc)
 #define logval(x) (x != NULL && *x != '\0' ? x : "null or empty")
 
 static void
-isecgaudit_ClientAuthentication_hook(Port *port, int status)
+audit_ClientAuthentication_hook(Port *port, int status)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_ClientAuthentication_hook");
+	AUDIT_DEBUG_LOG("audit_ClientAuthentication_hook");
 
 	PostgreSQL_proc proc;
 
@@ -1572,9 +1518,9 @@ isecgaudit_ClientAuthentication_hook(Port *port, int status)
  * ExecutorCheckPerms.
  */
 static void
-isecgaudit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
+audit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_ExecutorStart_hook");
+	AUDIT_DEBUG_LOG("audit_ExecutorStart_hook");
 
 	if (queryDesc == NULL)
 	{
@@ -1632,7 +1578,7 @@ isecgaudit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
 	 * Move the stack memory context to the query memory context.  This needs
 	 * to be done here because the query context does not exist before the
 	 * call to standard_ExecutorStart() but the stack item is required by
-	 * isecgaudit_ExecutorCheckPerms_hook() which is called during
+	 * audit_ExecutorCheckPerms_hook() which is called during
 	 * standard_ExecutorStart().
 	 */
 	if (stackItem)
@@ -1646,9 +1592,9 @@ isecgaudit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
  * Hook ExecutorCheckPerms to do session and object auditing for DML.
  */
 static bool
-isecgaudit_ExecutorCheckPerms_hook(List *rangeTabls, bool abort1)
+audit_ExecutorCheckPerms_hook(List *rangeTabls, bool abort1)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_ExecutorCheckPerms_hook");
+	AUDIT_DEBUG_LOG("audit_ExecutorCheckPerms_hook");
 
 	Oid auditOid;
 
@@ -2207,7 +2153,7 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
  * Hook ProcessUtility to do session auditing for DDL and utility commands.
  */
 static void
-isecgaudit_ProcessUtility_hook(Node *parsetree,
+audit_ProcessUtility_hook(Node *parsetree,
                              const char *queryString,
 #if PG_VERSION_NUM >= 90300
                              ProcessUtilityContext context,
@@ -2219,7 +2165,7 @@ isecgaudit_ProcessUtility_hook(Node *parsetree,
                              DestReceiver *dest,
                              char *completionTag)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_ProcessUtility_hook");
+	AUDIT_DEBUG_LOG("audit_ProcessUtility_hook");
 
 	AuditEventStackItem *stackItem = NULL;
 	int64 stackId = 0;
@@ -2241,9 +2187,9 @@ isecgaudit_ProcessUtility_hook(Node *parsetree,
 			{
 				if (auditEventStack != NULL)
 				{
-					// elog(ERROR, "isecgaudit stack is not empty"); // Bug#1137978 log level ERROR cause to abort transaction, refer to elog.h
+					// elog(ERROR, "audit stack is not empty"); // Bug#1137978 log level ERROR cause to abort transaction, refer to elog.h
 					// not using log level WARNING directly, so log message will not be presented to client but only to server log
-					AUDIT_WARNING_LOG("isecgaudit stack is not empty");
+					AUDIT_WARNING_LOG("audit stack is not empty");
 				}
 
 				stackItem = stack_push();
@@ -2343,13 +2289,13 @@ isecgaudit_ProcessUtility_hook(Node *parsetree,
  * calls.
  */
 static void
-isecgaudit_object_access_hook(ObjectAccessType access,
+audit_object_access_hook(ObjectAccessType access,
                             Oid classId,
                             Oid objectId,
                             int subId,
                             void *arg)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_object_access_hook");
+	AUDIT_DEBUG_LOG("audit_object_access_hook");
 
 #if PG_VERSION_NUM >= 90300
 	if (access == OAT_FUNCTION_EXECUTE &&
@@ -2373,9 +2319,9 @@ isecgaudit_object_access_hook(ObjectAccessType access,
  */
 #if PG_VERSION_NUM < 90500
 static void
-isecgaudit_ExecutorEnd_hook(QueryDesc *queryDesc)
+audit_ExecutorEnd_hook(QueryDesc *queryDesc)
 {
-	AUDIT_DEBUG_LOG("isecgaudit_ExecutorEnd_hook");
+	AUDIT_DEBUG_LOG("audit_ExecutorEnd_hook");
 
 	if (queryDesc == NULL)
 	{
@@ -2383,7 +2329,7 @@ isecgaudit_ExecutorEnd_hook(QueryDesc *queryDesc)
 		return;
 	}
 
-	// isecgaudit_ExecutorStart_hook did stack_push
+	// audit_ExecutorStart_hook did stack_push
 	// so need to stack_free it (stack_pop only handles the MemoryContext, not the stack management)
 	stack_free(auditEventStack);
 
@@ -2415,9 +2361,9 @@ isecgaudit_ExecutorEnd_hook(QueryDesc *queryDesc)
  */
 
 static void
-isecgaudit_emit_log_hook(ErrorData *edata)
+audit_emit_log_hook(ErrorData *edata)
 {
-	//	printf("%s\n", "isecgaudit_emit_log_hook");
+	//	printf("%s\n", "audit_emit_log_hook");
 
 	if (edata == NULL || edata->filename == NULL)
 	{
@@ -2469,7 +2415,7 @@ isecgaudit_emit_log_hook(ErrorData *edata)
 	}
 	/*
 	 * Audit failed login
-	 * which didnt trigger isecgaudit_ClientAuthentication_hook
+	 * which didnt trigger audit_ClientAuthentication_hook
 	 */
 	else if ( edata->elevel     == FATAL 										  &&
 			edata->sqlerrcode == ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION    &&
@@ -2477,7 +2423,7 @@ isecgaudit_emit_log_hook(ErrorData *edata)
 			     || strcmp(edata->filename,"postmaster.c") == 0
 			     || strcmp(edata->filename,"miscinit.c")   == 0 ))
 	{
-		//		printf("%s\n", "failed login, not trigger isecgaudit_ClientAuthentication_hook");
+		//		printf("%s\n", "failed login, not trigger audit_ClientAuthentication_hook");
 
 		PostgreSQL_proc proc;
 
@@ -2540,7 +2486,7 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	if (auditEventStack == NULL)
 	{
 		// not using log level WARNING directly, so log message will not be presented to client but only to server log
-		AUDIT_WARNING_LOG("isecgaudit not loaded before call to "
+		AUDIT_WARNING_LOG("audit not loaded before call to "
 				"pgaudit_ddl_command_end()");
 		PG_RETURN_NULL();
 	}
@@ -2667,8 +2613,8 @@ pgaudit_sql_drop(PG_FUNCTION_ARGS)
 	if (auditEventStack == NULL)
 	{
 		// not using log level WARNING directly, so log message will not be presented to client but only to server log
-		AUDIT_WARNING_LOG("isecgaudit not loaded before call to "
-				"pgaudit_sql_drop()");
+		AUDIT_WARNING_LOG("audit not loaded before call to "
+				"audit_sql_drop()");
 		PG_RETURN_NULL();
 	}
 
@@ -2755,7 +2701,7 @@ pgaudit_sql_drop(PG_FUNCTION_ARGS)
 
 ////////////////////////// end of pgaudit code //////////////////////////////
 
-// generate /var/tmp/isecg_audit/<portNumber>_<serverVersion>_<auditVersion>_<auditProtocolVersion> file
+// generate /var/tmp/audit/<portNumber>_<serverVersion>_<auditVersion>_<auditProtocolVersion> file
 void generate_version_file()
 {
 	AUDIT_DEBUG_LOG("generate_version_file");
@@ -2819,7 +2765,8 @@ run_at_exit(void)
 	// log disconnect here
 	Audit_handler::log_audit_disconnect();
 
-	// release allocated memory (allocated directly by malloc/strdup and not part of PG MemoryContext)
+	// release allocated memory (allocated directly by malloc/strdup
+	// and not part of PG MemoryContext)
 	if (whitelist_cmds_array != NULL)
 	{
 		if (whitelist_cmds_array[0] != NULL)
@@ -2849,7 +2796,7 @@ _PG_init(void)
 	if (IsUnderPostmaster)
 	{
 		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("isecgaudit must be loaded via shared_preload_libraries")));
+					errmsg("audit must be loaded via shared_preload_libraries")));
 	}
 
 	postmaster_pid = getpid();
@@ -2877,12 +2824,11 @@ _PG_init(void)
 				"%s unable to init json socket handler. res: %d. Aborting.",
 				AUDIT_LOG_PREFIX, res)));
 	}
-	// FUTURE: init tcp handler
 
-	/* Define isecgaudit.json_file */
+	/* Define audit.json_file */
 	DefineCustomBoolVariable(
-			"isecgaudit.json_file",
-			"Specifies that isecgaudit should log JSON messages to a file.",
+			"audit.json_file",
+			"Specifies that audit should log JSON messages to a file.",
 			NULL,
 			&json_file_handler_enable,
 			false,
@@ -2890,11 +2836,11 @@ _PG_init(void)
 			GUC_NOT_IN_SAMPLE,
 			NULL, NULL, NULL);
 
-	/* Define isecgaudit.json_file_flush */
+	/* Define audit.json_file_flush */
 	DefineCustomBoolVariable(
-			"isecgaudit.json_file_flush",
+			"audit.json_file_flush",
 
-			"Specifies that isecgaudit should flush the log file.",
+			"Specifies that audit should flush the log file.",
 
 			NULL,
 			&json_file_handler_flush,
@@ -2906,24 +2852,24 @@ _PG_init(void)
 			NULL);
 
 
-	/* Define isecgaudit.json_file_name */
+	/* Define audit.json_file_name */
 	DefineCustomStringVariable(
-			"isecgaudit.json_file_name",
-			"Specifies the name of the file to which isecgaudit should send JSON "
-			"messages when isecgaudit_json_file is true",
+			"audit.json_file_name",
+			"Specifies the name of the file to which audit should send JSON "
+			"messages when audit_json_file is true",
 			NULL,
 			& json_file_handler.m_io_dest,
 			DEFAULT_JSON_FILENAME,
 			PGC_SUSET,
 			GUC_NOT_IN_SAMPLE,
 			check_json_file_name,
-			assign_json_file_name,
+			NULL,
 			NULL);
 
-	/* Define isecgaudit_json_unix_socket */
+	/* Define audit_json_unix_socket */
 	DefineCustomBoolVariable(
-			"isecgaudit.json_unix_socket",
-			"Specifies that isecgaudit should log JSON messages to a UNIX domain socket.",
+			"audit.json_unix_socket",
+			"Specifies that audit should log JSON messages to a UNIX domain socket.",
 			NULL,
 			&json_unix_socket_handler_enable,
 			false,
@@ -2931,27 +2877,27 @@ _PG_init(void)
 			GUC_NOT_IN_SAMPLE,
 			NULL, NULL, NULL);
 
-	// set up default name
-	assign_json_unix_socket_name(NULL, NULL);
-
-	/* Define isecgaudit.json_unix_socket_name */
+	/* Define audit.json_unix_socket_name */
 	DefineCustomStringVariable(
-			"isecgaudit.json_unix_socket_name",
-			"Specifies the pathname of the socket to which isecgaudit should send JSON "
-			"messages when isecgaudit_json_unix_socket is true",
+			"audit.json_unix_socket_name",
+			"Specifies the pathname of the socket to which audit should send JSON "
+			"messages when audit_json_unix_socket is true",
 			NULL,
 			& json_unix_socket_handler.m_io_dest,
-			json_unix_socket_handler.m_io_dest,	// default value
+			Audit_utils::plugin_socket_name(),	// default value
 			PGC_SUSET,
 			GUC_NOT_IN_SAMPLE,
 			check_json_unix_socket_name,
-			assign_json_unix_socket_name,
+			NULL,
 			NULL);
 
-	/* Define isecgaudit_header_msg */
+	AUDIT_DEBUG_LOG("Set json_socket_name value: [%s]",
+		json_unix_socket_handler.m_io_dest ?  json_unix_socket_handler.m_io_dest : "null");
+
+	/* Define audit_header_msg */
 	DefineCustomBoolVariable(
-			"isecgaudit.header_msg",
-			"Specifies that isecgaudit should write a header start message at start "
+			"audit.header_msg",
+			"Specifies that audit should write a header start message at start "
 			"of logging or file flush. Default enabled.",
 			NULL,
 			&json_formatter.m_write_start_msg,
@@ -2960,9 +2906,9 @@ _PG_init(void)
 			GUC_NOT_IN_SAMPLE,
 			NULL, NULL, NULL);
 
-	/* Define isecgaudit.password_masking_regex */
+	/* Define audit.password_masking_regex */
 	DefineCustomStringVariable(
-			"isecgaudit.password_masking_regex",
+			"audit.password_masking_regex",
 			"Specifies the PCRE compliant regex for password masking",
 			NULL,
 			&password_masking_regex,
@@ -2970,38 +2916,38 @@ _PG_init(void)
 			PGC_SUSET,
 			GUC_NOT_IN_SAMPLE,
 			check_password_masking_regex,
-			assign_password_masking_regex,
+			NULL,
 			NULL);
 
-	/* Define isecgaudit.audit_version */
+	/* Define audit.audit_version */
 	DefineCustomStringVariable(
-			"isecgaudit.audit_version",
-			"Indicates the version and revision of the isecg audit plugin",
+			"audit.audit_version",
+			"Indicates the version and revision of the  audit plugin",
 			NULL,
 			& audit_version_ptr,
 			audit_version,
 			PGC_SUSET,
 			GUC_NOT_IN_SAMPLE |  GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
 			check_audit_version,
-			assign_audit_version,
+			NULL,
 			NULL);
 
-	/* Define isecgaudit.audit_version */
+	/* Define audit.audit_version */
 	DefineCustomStringVariable(
-			"isecgaudit.audit_protocol_version",
-			"Indicates the protocol version of the isecg audit plugin",
+			"audit.audit_protocol_version",
+			"Indicates the protocol version of the audit plugin",
 			NULL,
 			& audit_protocol_version_ptr,
 			audit_protocol_version,
 			PGC_SUSET,
 			GUC_NOT_IN_SAMPLE |  GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
 			check_audit_protocol_version,
-			assign_audit_protocol_version,
+			NULL,
 			NULL);
 
-	/* Define isecgaudit.whitelist_cmds */
+	/* Define audit.whitelist_cmds */
 	DefineCustomStringVariable(
-			"isecgaudit.whitelist_cmds",
+			"audit.whitelist_cmds",
 			"Comma separated list of commands for which queries are not recorded",
 			NULL,
 			& whitelist_cmds_ptr,
@@ -3013,15 +2959,15 @@ _PG_init(void)
 			NULL);
 
 	/*
-	 * enable/disable isecgaudit debug logging
+	 * enable/disable audit debug logging
 	 *
 	 * Note:
 	 * plugin logs using PostgreSQL elog(),
 	 * thus need to define also matching elog configuration (see PG documentation)
 	 */
 	DefineCustomBoolVariable(
-			"isecgaudit.debug_logs",
-			"Enable/disable isecg_audit plugin debug logging. Default: disabled",
+			"audit.debug_logs",
+			"Enable/disable audit plugin debug logging. Default: disabled",
 			NULL,
 			&audit_logging,
 			false,
@@ -3040,27 +2986,27 @@ _PG_init(void)
 	 * preserve the chains.
 	 */
 	next_ExecutorStart_hook = ExecutorStart_hook;
-	ExecutorStart_hook = isecgaudit_ExecutorStart_hook;
+	ExecutorStart_hook = audit_ExecutorStart_hook;
 
 	next_ExecutorCheckPerms_hook = ExecutorCheckPerms_hook;
-	ExecutorCheckPerms_hook = isecgaudit_ExecutorCheckPerms_hook;
+	ExecutorCheckPerms_hook = audit_ExecutorCheckPerms_hook;
 
 	next_ProcessUtility_hook = ProcessUtility_hook;
-	ProcessUtility_hook = isecgaudit_ProcessUtility_hook;
+	ProcessUtility_hook = audit_ProcessUtility_hook;
 
 	next_object_access_hook = object_access_hook;
-	object_access_hook = isecgaudit_object_access_hook;
+	object_access_hook = audit_object_access_hook;
 
 	next_ClientAuthentication_hook = ClientAuthentication_hook;
-	ClientAuthentication_hook = isecgaudit_ClientAuthentication_hook;
+	ClientAuthentication_hook = audit_ClientAuthentication_hook;
 
 #if PG_VERSION_NUM < 90500
 	next_ExecutorEnd_hook = ExecutorEnd_hook;
-	ExecutorEnd_hook = isecgaudit_ExecutorEnd_hook;
+	ExecutorEnd_hook = audit_ExecutorEnd_hook;
 #endif
 
 	next_emit_log_hook = emit_log_hook;
-	emit_log_hook = isecgaudit_emit_log_hook;
+	emit_log_hook = audit_emit_log_hook;
 
 	generate_version_file();
 
