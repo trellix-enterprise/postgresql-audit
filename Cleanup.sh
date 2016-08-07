@@ -11,8 +11,6 @@ xargs rm -fr << \EOF
 	config.status
 	configure
 	libtool
-	Makefile
-	Makefile.in
 	Makefile.pg
 	pcre/config.h
 	pcre/config.log
@@ -36,4 +34,5 @@ xargs rm -fr << \EOF
 	yajl/src/.deps
 	yajl/src/Makefile
 	yajl/src/Makefile.in
+	src/Makefile.pg
 EOF

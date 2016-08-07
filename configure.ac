@@ -79,10 +79,6 @@ AC_PATH_PROG(DIFF, diff, diff)
 CPPFLAGS="$CPPFLAGS -Werror -Wall"
 CFLAGS="$CFLAGS -Wimplicit"
 
-#add pthread libs
-LIBS="$LIBS -lpthread"
-
-
 #make sure we have const
 AC_C_CONST
 AC_TYPE_SIZE_T
@@ -112,10 +108,8 @@ AC_SUBST(CPPFLAGS)
 AC_SUBST(CXXFLAGS)
 AC_SUBST(CFLAGS)
 
-dnl		src/Makefile
-
-AC_CONFIG_FILES([Makefile
-		Makefile.pg
+AC_CONFIG_FILES([
+		src/Makefile.pg
 		yajl/Makefile
 		yajl/src/Makefile
 				])
