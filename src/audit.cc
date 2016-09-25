@@ -76,7 +76,7 @@ bool json_file_handler_enable = true;
 bool json_unix_socket_handler_enable = false;
 
 // GUC variable for audit.json_unix_socket_name
-// char *json_unix_socket_name = NULL;
+char *dummy_json_unix_socket_name = NULL;
 
 // GUC variable for audit.json_file_flush
 bool json_file_handler_flush = false;
@@ -2956,6 +2956,49 @@ _PG_init(void)
 			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_AUTO_FILE,
 			check_whitelist_cmds,
 			assign_whitelist_cmds,
+			NULL);
+
+	// Backwards compatibility with earlier plugin:
+	/* Define isecgaudit.audit_version */
+	DefineCustomStringVariable(
+			"isecgaudit.audit_version",
+			"Indicates the version and revision of the  audit plugin",
+			NULL,
+			& audit_version_ptr,
+			audit_version,
+			PGC_SUSET,
+			GUC_NOT_IN_SAMPLE |  GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
+			check_audit_version,
+			NULL,
+			NULL);
+
+	// Backwards compatibility with earlier plugin:
+	/* Define isecgaudit.audit_version */
+	DefineCustomStringVariable(
+			"isecgaudit.audit_protocol_version",
+			"Indicates the protocol version of the audit plugin",
+			NULL,
+			& audit_protocol_version_ptr,
+			audit_protocol_version,
+			PGC_SUSET,
+			GUC_NOT_IN_SAMPLE |  GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
+			check_audit_protocol_version,
+			NULL,
+			NULL);
+
+	// Backwards compatibility with earlier plugin:
+	/* Define isecgaudit.json_unix_socket_name */
+	DefineCustomStringVariable(
+			"isecgaudit.json_unix_socket_name",
+			"Specifies the pathname of the socket to which audit should send JSON "
+			"messages when audit_json_unix_socket is true",
+			NULL,
+			& dummy_json_unix_socket_name,
+			json_unix_socket_handler.m_io_dest,	// default value from real
+			PGC_SUSET,
+			GUC_NOT_IN_SAMPLE |  GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
+			NULL,
+			NULL,
 			NULL);
 
 	/*
