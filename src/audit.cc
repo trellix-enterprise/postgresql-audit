@@ -2201,7 +2201,11 @@ audit_ProcessUtility_hook(Node *parsetree,
 			}
 
 		stackId = stackItem->stackId;
+#ifndef EDB_ENTERPRISE
 		stackItem->auditEvent.logStmtLevel = GetCommandLogLevel(parsetree);
+#else // Build "EDB Postgres Enterprise" variant
+		stackItem->auditEvent.logStmtLevel = LOGSTMT_NONE; // Prevent unnecessary logic activation in log_audit_event()
+#endif
 		stackItem->auditEvent.commandTag = nodeTag(parsetree);
 		stackItem->auditEvent.command = CreateCommandTag(parsetree);
 		stackItem->auditEvent.commandText = queryString;
@@ -2515,7 +2519,11 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	eventData = (EventTriggerData *) fcinfo->context;
 
 	auditEventStack->auditEvent.logStmtLevel =
+#ifndef EDB_ENTERPRISE
 		GetCommandLogLevel(eventData->parsetree);
+#else // Build "EDB Postgres Enterprise" variant
+		LOGSTMT_NONE; // Prevent unnecessary logic activation in log_audit_event()
+#endif
 	auditEventStack->auditEvent.commandTag =
 		nodeTag(eventData->parsetree);
 	auditEventStack->auditEvent.command =
