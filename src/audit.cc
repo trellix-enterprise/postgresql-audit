@@ -2730,7 +2730,7 @@ void generate_version_file()
 
 	AUDIT_DEBUG_LOG("plugin version_filename: [%s]", version_filename);
 
-	if (mkdir(location, 0777) < 0)
+	if (mkdir(location, 0777) < 0 && errno != EEXIST)
 	{
 		AUDIT_ERROR_LOG("Error mkdir: [%s]", strerror(errno));
 	}
