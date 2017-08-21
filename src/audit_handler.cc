@@ -170,8 +170,18 @@ void Audit_handler::log_audit(AuditEventStackItem *pItem)
 	{
 		if (! handler_log_audit(pItem))
 		{
-			set_failed();
-			handler_stop_internal();
+			// Failure might be due to socket re-creation (for example, Sensor was restarted)
+			// In order not to miss all events till next retry,
+			// try to re-open socket now and report the event
+			if (handler_start_nolock() && handler_log_audit(pItem))
+			{
+				elog(LOG, "%s successfully reconnected to socket", AUDIT_LOG_PREFIX);
+			}
+			else
+			{
+				set_failed();
+				handler_stop_internal();
+			}
 		}
 	}
 }
