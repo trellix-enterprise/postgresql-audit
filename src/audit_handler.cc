@@ -621,11 +621,25 @@ static std::string get_name_from_cell(void *cell_ptr, bool useLastInList)
 	{ 
 		obj_name += v->val.str;
 	} 
-	else if (v->type == T_List)
+	else if (v->type == T_List
+#if PG_VERSION_NUM >= 100001
+			|| v->type == T_ObjectWithArgs
+			|| v->type == T_TypeName
+#endif
+			)
 	{
 		ListCell *cell;
 		List *list = (List *) cell_ptr;
-
+#if PG_VERSION_NUM >= 100001
+		if (v->type == T_ObjectWithArgs)
+		{ /*DROP FUNCTION, DROP AGGREGATE */
+			list = ((ObjectWithArgs *) cell_ptr)->objname;
+		}
+		else if (v->type == T_TypeName)
+		{ /* DROP DOMAIN */
+			list = ((TypeName *) cell_ptr)->names;
+		}
+#endif
 		if (useLastInList)
 		{
 			ListCell *last = list_tail(list);

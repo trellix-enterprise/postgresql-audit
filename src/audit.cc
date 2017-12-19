@@ -1956,14 +1956,22 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 
 	case T_AlterRoleStmt:
 		alterRole = (AlterRoleStmt *) parsetree;
+#if PG_VERSION_NUM >= 100001
+		event->objectName = getRoleName((const Node*)alterRole->role);
+#else
 		event->objectName = getRoleName(alterRole->role);
+#endif
 		break;
 
 	case T_AlterRoleSetStmt:
 		alterRoleSet = (AlterRoleSetStmt *) parsetree;
 		if (alterRoleSet->role != NULL)
 		{
+#if PG_VERSION_NUM >= 100001
+			event->objectName = getRoleName((const Node*)alterRoleSet->role);
+#else
 			event->objectName = getRoleName(alterRoleSet->role);
+#endif
 		}
 		else
 		{
@@ -1997,7 +2005,22 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 
 	case T_AlterOwnerStmt:
 		alterOwner = (AlterOwnerStmt *) parsetree;
-		event->objectList = alterOwner->object;
+		if (alterOwner->object->type == T_List)
+		{
+			event->objectList = (List*)alterOwner->object;
+		}
+#if PG_VERSION_NUM >= 100001
+		// ALTER AGGREGATE OWNER handling
+		else if (alterOwner->object->type == T_ObjectWithArgs)
+		{
+			event->objectList = ((ObjectWithArgs* )alterOwner->object)->objname;
+		}
+#endif
+		else
+		{
+			AUDIT_WARNING_LOG("case T_AlterOwnerStmt, unsupported object type");
+			event->objectList = NULL;
+		}
 		event->objectType = objectTypeToString(alterOwner->objectType);
 		event->objectName = NULL;
 		break;
@@ -2011,7 +2034,11 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 
 	case T_AlterFunctionStmt:
 		alterFunction = (AlterFunctionStmt *) parsetree;
+#if PG_VERSION_NUM >= 100001
+		event->objectList = alterFunction->func->objname;
+#else
 		event->objectList = alterFunction->func->funcname;
+#endif
 		event->objectType = "FUNCTION";
 		event->objectName = NULL;
 		break;
@@ -2112,9 +2139,32 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 #if PG_VERSION_NUM >= 90500
 		case OBJECT_DOMCONSTRAINT:
 #endif
-			event->objectList = rename->object;
+#if PG_VERSION_NUM < 90300
+			// 9.2 special handling
+			event->objectList = (List*)rename->object;
 			event->objectName = NULL;
 			break;
+#else
+
+			if (rename->object->type == T_List)
+			{
+				event->objectList = (List*)rename->object;
+			}
+#if PG_VERSION_NUM >= 100001
+			// Special handling for: OBJECT_AGGREGATE
+			else if (rename->object->type == T_ObjectWithArgs)
+			{
+				event->objectList = ((ObjectWithArgs*)rename->object)->objname;
+			}
+#endif /* PG_VERSION_NUM >= 100001 */
+			else
+			{
+				AUDIT_WARNING_LOG("Unsupported rename object type [%d]", rename->object->type);
+				event->objectList = NULL;
+			}
+			event->objectName = NULL;
+			break;
+#endif /* PG_VERSION_NUM < 90300 */
 		case OBJECT_ATTRIBUTE:
 		case OBJECT_DATABASE:
 		case OBJECT_ROLE:
@@ -2153,7 +2203,12 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
  * Hook ProcessUtility to do session auditing for DDL and utility commands.
  */
 static void
-audit_ProcessUtility_hook(Node *parsetree,
+audit_ProcessUtility_hook(   
+#if PG_VERSION_NUM >= 100001
+                             PlannedStmt *pstmt,
+#else
+                             Node *parsetree,
+#endif
                              const char *queryString,
 #if PG_VERSION_NUM >= 90300
                              ProcessUtilityContext context,
@@ -2162,10 +2217,17 @@ audit_ProcessUtility_hook(Node *parsetree,
 #if PG_VERSION_NUM < 90300
                              bool isTopLevel,
 #endif
+#if PG_VERSION_NUM >= 100001
+							 QueryEnvironment *queryEnv,
+#endif
                              DestReceiver *dest,
                              char *completionTag)
 {
 	AUDIT_DEBUG_LOG("audit_ProcessUtility_hook");
+
+#if PG_VERSION_NUM >= 100001
+	Node *parsetree = (Node*)pstmt;
+#endif
 
 	AuditEventStackItem *stackItem = NULL;
 	int64 stackId = 0;
@@ -2222,7 +2284,18 @@ audit_ProcessUtility_hook(Node *parsetree,
 	}
 
 	/* Call the standard process utility chain. */
-#if PG_VERSION_NUM >= 90300
+#if PG_VERSION_NUM >= 100001
+	if (next_ProcessUtility_hook)
+	{
+		(*next_ProcessUtility_hook) (pstmt, queryString, context,
+				params, queryEnv, dest, completionTag);
+	}
+	else
+	{
+		standard_ProcessUtility(pstmt, queryString, context,
+				params, queryEnv, dest, completionTag);
+	}
+#elif PG_VERSION_NUM >= 90300
 	if (next_ProcessUtility_hook)
 	{
 		(*next_ProcessUtility_hook) (parsetree, queryString, context,
@@ -2264,7 +2337,12 @@ audit_ProcessUtility_hook(Node *parsetree,
 		stackItem->auditEvent.objectList = NULL;
 
 		// Fill in accessed-object info
+#if PG_VERSION_NUM >= 100001
+		const Node  *parsetreetmp = ((PlannedStmt *)parsetree)->utilityStmt;
+		updateAccessedObjectInfo(& stackItem->auditEvent, parsetreetmp);
+#else
 		updateAccessedObjectInfo(& stackItem->auditEvent, parsetree);
+#endif
 
 		/*
 		 * Log the utility command if logging is on, the command has not
