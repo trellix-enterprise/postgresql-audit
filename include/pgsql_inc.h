@@ -1,10 +1,8 @@
 extern "C" {
 #include "postgres.h"
 
-#if PG_VERSION_NUM >= 90300
 #include "access/htup_details.h"
 #include "commands/event_trigger.h"
-#endif
 #if PG_VERSION_NUM >= 100001
 #include "utils/queryenvironment.h"
 #include "utils/varlena.h"

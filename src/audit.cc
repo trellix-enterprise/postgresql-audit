@@ -1212,11 +1212,9 @@ log_select_dml(Oid auditOid, List *rangeTabls)
 			auditEventStack->auditEvent.objectType = OBJECT_TYPE_FOREIGN_TABLE;
 			break;
 
-#if PG_VERSION_NUM >= 90300
 		case RELKIND_MATVIEW:
 			auditEventStack->auditEvent.objectType = OBJECT_TYPE_MATVIEW;
 			break;
-#endif
 
 		default:
 			auditEventStack->auditEvent.objectType = OBJECT_TYPE_UNKNOWN;
@@ -1694,11 +1692,8 @@ static const char *objectTypeToString(enum ObjectType objtype)
 	case OBJECT_TSTEMPLATE: return "TEXT SEARCH TEMPLATE";
 	case OBJECT_TYPE: return "TYPE";
 	case OBJECT_VIEW: return "VIEW";
-
-#if PG_VERSION_NUM >= 90300
 	case OBJECT_MATVIEW: return "MATERIALIZED VIEW";
 	case OBJECT_EVENT_TRIGGER: return "EVENT TRIGGER";
-#endif
 
 #if PG_VERSION_NUM >= 90500
 	case OBJECT_AMOP: return "AMOP";
@@ -1773,11 +1768,9 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 	CreateDomainStmt *createDomain = NULL;
 	IndexStmt *indexStmt = NULL;
 	CreateTableAsStmt *createTableAs = NULL;
-#if PG_VERSION_NUM >= 90300
 	RefreshMatViewStmt *refreshMatView = NULL;
 	AlterEventTrigStmt *alterEventTrig = NULL;
 	CreateEventTrigStmt *createEventTrig = NULL;
-#endif
 
 	switch (parsetree->type)
 	{
@@ -1792,7 +1785,7 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 
 	case T_CreateTableAsStmt:
 		createTableAs = (CreateTableAsStmt *) parsetree;
-#if PG_VERSION_NUM >= 90300
+
 		if (createTableAs->relkind == OBJECT_MATVIEW)
 		{
 			// we cannot pull out the accessed object here
@@ -1800,7 +1793,6 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 			event->command = "CREATE MATERIALIZED VIEW";	// not "CREATE TABLE AS"
 		}
 		else
-#endif
 		{
 			event->objectName = getFullObjectName(createTableAs->into->rel);
 			event->command = "CREATE TABLE";	// not "CREATE TABLE AS"
@@ -2044,7 +2036,6 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 		break;
 
 
-#if PG_VERSION_NUM >= 90300
 	case T_CreateEventTrigStmt:
 		createEventTrig = (CreateEventTrigStmt *) parsetree;
 		event->objectName = pstrdup(createEventTrig->trigname);
@@ -2065,7 +2056,6 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 		event->objectType = "MATERIALIZED VIEW";
 		event->objectName = getFullObjectName(refreshMatView->relation);
 		break;
-#endif
 
 	case T_TruncateStmt:
 		truncateStatement = (TruncateStmt *) parsetree;
@@ -2133,19 +2123,10 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 		case OBJECT_TSCONFIGURATION:
 		case OBJECT_TSPARSER:
 		case OBJECT_TYPE:
-#if PG_VERSION_NUM >= 90300
 		case OBJECT_EVENT_TRIGGER:
-#endif
 #if PG_VERSION_NUM >= 90500
 		case OBJECT_DOMCONSTRAINT:
 #endif
-#if PG_VERSION_NUM < 90300
-			// 9.2 special handling
-			event->objectList = (List*)rename->object;
-			event->objectName = NULL;
-			break;
-#else
-
 			if (rename->object->type == T_List)
 			{
 				event->objectList = (List*)rename->object;
@@ -2164,7 +2145,6 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 			}
 			event->objectName = NULL;
 			break;
-#endif /* PG_VERSION_NUM < 90300 */
 		case OBJECT_ATTRIBUTE:
 		case OBJECT_DATABASE:
 		case OBJECT_ROLE:
@@ -2182,9 +2162,7 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 		case OBJECT_TRIGGER:
 		case OBJECT_SEQUENCE:
 		case OBJECT_VIEW:
-#if PG_VERSION_NUM >= 90300
 		case OBJECT_MATVIEW:
-#endif
 #if PG_VERSION_NUM >= 90500
 		case OBJECT_TABCONSTRAINT:
 #endif
@@ -2210,13 +2188,8 @@ audit_ProcessUtility_hook(
                              Node *parsetree,
 #endif
                              const char *queryString,
-#if PG_VERSION_NUM >= 90300
                              ProcessUtilityContext context,
-#endif
                              ParamListInfo params,
-#if PG_VERSION_NUM < 90300
-                             bool isTopLevel,
-#endif
 #if PG_VERSION_NUM >= 100001
 							 QueryEnvironment *queryEnv,
 #endif
@@ -2236,26 +2209,20 @@ audit_ProcessUtility_hook(
 	 * Don't audit substatements.  All the substatements we care about should
 	 * be covered by the event triggers.
 	 */
-#if PG_VERSION_NUM >= 90300
 	if (context <= PROCESS_UTILITY_QUERY && !IsAbortedTransactionBlockState())
-#endif
 	{
 		/* Process top level utility statement */
-#if PG_VERSION_NUM >= 90300
 		if (context == PROCESS_UTILITY_TOPLEVEL)
-#else
-			if (isTopLevel)
-#endif
+		{
+			if (auditEventStack != NULL)
 			{
-				if (auditEventStack != NULL)
-				{
-					// elog(ERROR, "audit stack is not empty"); // Bug#1137978 log level ERROR cause to abort transaction, refer to elog.h
-					// not using log level WARNING directly, so log message will not be presented to client but only to server log
-					AUDIT_WARNING_LOG("audit stack is not empty");
-				}
+				// elog(ERROR, "audit stack is not empty"); // Bug#1137978 log level ERROR cause to abort transaction, refer to elog.h
+				// not using log level WARNING directly, so log message will not be presented to client but only to server log
+				AUDIT_WARNING_LOG("audit stack is not empty");
+			}
 
-				stackItem = stack_push();
-				stackItem->auditEvent.paramList = params;
+			stackItem = stack_push();
+			stackItem->auditEvent.paramList = params;
 			}
 			else
 			{
@@ -2295,7 +2262,7 @@ audit_ProcessUtility_hook(
 		standard_ProcessUtility(pstmt, queryString, context,
 				params, queryEnv, dest, completionTag);
 	}
-#elif PG_VERSION_NUM >= 90300
+#else
 	if (next_ProcessUtility_hook)
 	{
 		(*next_ProcessUtility_hook) (parsetree, queryString, context,
@@ -2305,17 +2272,6 @@ audit_ProcessUtility_hook(
 	{
 		standard_ProcessUtility(parsetree, queryString, context,
 				params, dest, completionTag);
-	}
-#else
-	if (next_ProcessUtility_hook)
-	{
-		(*next_ProcessUtility_hook) (parsetree, queryString,
-				params, isTopLevel, dest, completionTag);
-	}
-	else
-	{
-		standard_ProcessUtility(parsetree, queryString,
-				params, isTopLevel, dest, completionTag);
 	}
 #endif
 
@@ -2379,13 +2335,11 @@ audit_object_access_hook(ObjectAccessType access,
 {
 	AUDIT_DEBUG_LOG("audit_object_access_hook");
 
-#if PG_VERSION_NUM >= 90300
 	if (access == OAT_FUNCTION_EXECUTE &&
 			auditEventStack && !IsAbortedTransactionBlockState())
 	{
 		log_function_execute(objectId);
 	}
-#endif
 
 	if (next_object_access_hook)
 	{
@@ -2556,7 +2510,6 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 {
 	AUDIT_DEBUG_LOG("pgaudit_ddl_command_end");
 
-#if PG_VERSION_NUM >= 90300
 	EventTriggerData *eventData;
 	int result, row;
 	TupleDesc spiTupDesc;
@@ -2678,7 +2631,6 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	internalStatement = false;
 
 	PG_RETURN_NULL();
-#endif
 }
 
 /*
@@ -2708,14 +2660,12 @@ pgaudit_sql_drop(PG_FUNCTION_ARGS)
 	internalStatement = true;
 
 	/* Make sure the fuction was fired as a trigger */
-#if PG_VERSION_NUM >= 90300
 	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
 	{
 		// not using log level WARNING directly, so log message will not be presented to client but only to server log
 		AUDIT_WARNING_LOG("not fired by event trigger manager");
 		PG_RETURN_NULL();
 	}
-#endif
 
 	/* Switch memory context for the query */
 	contextQuery = AllocSetContextCreate(

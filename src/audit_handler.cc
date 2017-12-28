@@ -954,122 +954,6 @@ bool Audit_json_formatter::compile_password_masking_regex(const char *str)
 	return success;
 }
 
-#if PG_VERSION_NUM < 90300
-// From PostgreSQL 9.5.1 sources
-
-/*
- * SplitDirectoriesString --- parse a string containing directory names
- *
- * This is similar to SplitIdentifierString, except that the parsing
- * rules are meant to handle pathnames instead of identifiers: there is
- * no downcasing, embedded spaces are allowed, the max length is MAXPGPATH-1,
- * and we apply canonicalize_path() to each extracted string.  Because of the
- * last, the returned strings are separately palloc'd rather than being
- * pointers into rawstring --- but we still scribble on rawstring.
- *
- * Inputs:
- *	rawstring: the input string; must be modifiable!
- *	separator: the separator punctuation expected between directories
- *			   (typically ',' or ';').  Whitespace may also appear around
- *			   directories.
- * Outputs:
- *	namelist: filled with a palloc'd list of directory names.
- *			  Caller should list_free_deep() this even on error return.
- *
- * Returns TRUE if okay, FALSE if there is a syntax error in the string.
- *
- * Note that an empty string is considered okay here.
- */
-bool
-SplitDirectoriesString(char *rawstring, char separator,
-					   List **namelist)
-{
-	char	   *nextp = rawstring;
-	bool		done = false;
-
-	*namelist = NIL;
-
-	while (isspace((unsigned char) *nextp))
-		nextp++;				/* skip leading whitespace */
-
-	if (*nextp == '\0')
-		return true;			/* allow empty string */
-
-	/* At the top of the loop, we are at start of a new directory. */
-	do
-	{
-		char	   *curname;
-		char	   *endp;
-
-		if (*nextp == '\"')
-		{
-			/* Quoted name --- collapse quote-quote pairs */
-			curname = nextp + 1;
-			for (;;)
-			{
-				endp = strchr(nextp + 1, '\"');
-				if (endp == NULL)
-					return false;		/* mismatched quotes */
-				if (endp[1] != '\"')
-					break;		/* found end of quoted name */
-				/* Collapse adjacent quotes into one quote, and look again */
-				memmove(endp, endp + 1, strlen(endp));
-				nextp = endp;
-			}
-			/* endp now points at the terminating quote */
-			nextp = endp + 1;
-		}
-		else
-		{
-			/* Unquoted name --- extends to separator or end of string */
-			curname = endp = nextp;
-			while (*nextp && *nextp != separator)
-			{
-				/* trailing whitespace should not be included in name */
-				if (!isspace((unsigned char) *nextp))
-					endp = nextp + 1;
-				nextp++;
-			}
-			if (curname == endp)
-				return false;	/* empty unquoted name not allowed */
-		}
-
-		while (isspace((unsigned char) *nextp))
-			nextp++;			/* skip trailing whitespace */
-
-		if (*nextp == separator)
-		{
-			nextp++;
-			while (isspace((unsigned char) *nextp))
-				nextp++;		/* skip leading whitespace for next */
-			/* we expect another name, so done remains false */
-		}
-		else if (*nextp == '\0')
-			done = true;
-		else
-			return false;		/* invalid syntax */
-
-		/* Now safe to overwrite separator with a null */
-		*endp = '\0';
-
-		/* Truncate path if it's overlength */
-		if (strlen(curname) >= MAXPGPATH)
-			curname[MAXPGPATH - 1] = '\0';
-
-		/*
-		 * Finished isolating current name --- add it to list
-		 */
-		curname = pstrdup(curname);
-		canonicalize_path(curname);
-		*namelist = lappend(*namelist, curname);
-
-		/* Loop back if we didn't reach end of string */
-	} while (!done);
-
-	return true;
-}
-#endif
-
 const char *Audit_utils::db_unix_socket_name()
 {
 	// get path to PostgreSQL Unix domain socket
@@ -1082,11 +966,8 @@ const char *Audit_utils::db_unix_socket_name()
 	 * configuration parameter is missing or empty,
 	 * use the default location directory (/tmp directory)
 	 */
-#if PG_VERSION_NUM >= 90300
 	const char *unix_socket_directories = GetConfigOption("unix_socket_directories", true, false);
-#else
-	const char *unix_socket_directories = GetConfigOption("unix_socket_directory", true, false);
-#endif
+
 	if (unix_socket_directories != NULL)
 	{
 		// have to split it apart and find one, see similar code in PostmasterMain
