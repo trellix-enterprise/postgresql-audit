@@ -17,6 +17,7 @@ https://github.com/mcafee/postgresql-audit/wiki
 
 Issues
 ------------------------------
+
 Found a bug? Got a feature request or question?
 
 Please feel free to report to: https://github.com/mcafee/postgresql-audit/issues

@@ -120,9 +120,9 @@ public:
 	Audit_json_formatter()
 		: m_msg_delimiter(NULL),
 		m_write_start_msg(true),
+		m_perform_password_masking(NULL),
 		m_password_mask_regex_preg(NULL),
-		m_password_mask_regex_compiled(false),
-		m_perform_password_masking(NULL)
+		m_password_mask_regex_compiled(false)
 	{
 		// elog(LOG, "%s:%d:%d: Audit_json_formatter constructor called", __FILE__, __LINE__, getpid());
 	}
@@ -149,6 +149,15 @@ public:
 	static pcre *regex_compile(const char *str);
 
 	/**
+	 * Message delimiter. Should point to a valid json string
+	 * (supporting the json escapping format).
+	 * Will only be checked at the start. Public so can be set by sysvar.
+	 *
+	 * We only support a delimiter up to 32 chars
+	 */
+	char *m_msg_delimiter;
+
+	/**
 	 * Compile password masking regex
 	 * Return true on success
 	 */
@@ -166,29 +175,20 @@ public:
 	 */
 	bool (*m_perform_password_masking)(const char *cmd);
 
-	/**
-	 * Message delimiter. Should point to a valid json string
-	 * (supporting the json escapping format).
-	 * Will only be checked at the start. Public so can be set by sysvar.
-	 *
-	 * We only support a delimiter up to 32 chars
-	 */
-	char *m_msg_delimiter;
-
 protected:
 
 	Audit_json_formatter& operator =(const Audit_json_formatter& b);
 	Audit_json_formatter(const Audit_json_formatter& );
 
 	/**
-	 * Boolean indicating if password masking regex is compiled
-	 */
-	bool m_password_mask_regex_compiled;
-
-	/**
 	 * Regex used for password masking
 	 */
 	pcre *m_password_mask_regex_preg;
+
+	/**
+	 * Boolean indicating if password masking regex is compiled
+	 */
+	bool m_password_mask_regex_compiled;
 };
 
 /**
@@ -303,7 +303,6 @@ public:
 	void set_proc(const PostgreSQL_proc& proc) { m_proc = proc; }
 
 protected:
-	Audit_formatter *m_formatter;
 	virtual void handler_start();
 	// will call internal method and set failed as needed
 	bool handler_start_nolock();
@@ -313,6 +312,7 @@ protected:
 	virtual bool handler_log_audit(AuditEventStackItem *pItem) = 0;
 	bool m_initialized;
 	bool m_enabled;
+	Audit_formatter *m_formatter;
 	bool m_failed;
 	bool m_log_io_errors;
 	time_t m_last_retry_sec_ts;
@@ -386,7 +386,7 @@ class Audit_file_handler: public Audit_io_handler {
 public:
 
 	Audit_file_handler() :
-		m_sync_period(0), m_log_file(NULL), m_sync_counter(0), m_bufsize(0)
+		m_sync_period(0), m_bufsize(0), m_log_file(NULL), m_sync_counter(0)
 	{
 		m_io_type = "file";
 		set_handler_type("file");
@@ -437,7 +437,7 @@ class Audit_unix_socket_handler: public Audit_io_handler {
 public:
 
 	Audit_unix_socket_handler() :
-		m_fd(-1), m_connect_timeout(1)
+		m_connect_timeout(1), m_fd(-1)
 	{
 		m_io_type = "socket";
 		set_handler_type("socket");

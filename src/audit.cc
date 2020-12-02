@@ -93,7 +93,6 @@ static char *audit_protocol_version_ptr = audit_version;	// for CreateCustomStri
 
 // regex stuff
 static char *password_masking_regex = NULL;
-static pcre *password_mask_regex_preg = NULL;
 
 #define _COMMENT_SPACE_ "(?:/\\*.*?\\*/|\\s)*?"
 #define _QUOTED_PSW_ "[\'|\"](?<psw>.*?)(?<!\\\\)[\'|\"]"
@@ -328,6 +327,9 @@ static bool check_do_password_masking(const char *cmd)
 #define LOG_READ        (1 << 3)    /* SELECTs */
 #define LOG_ROLE        (1 << 4)    /* GRANT/REVOKE, CREATE/ALTER/DROP ROLE */
 #define LOG_WRITE       (1 << 5)    /* INSERT, UPDATE, DELETE, TRUNCATE */
+#if PG_VERSION_NUM >= 120000
+#define LOG_MISC_SET    (1 << 6)    /* SET ... */
+#endif
 
 #define LOG_NONE        0               /* nothing */
 #define LOG_ALL         (0xFFFFFFFF)    /* All */
@@ -338,6 +340,9 @@ static bool check_do_password_masking(const char *cmd)
 #define CLASS_DDL       "DDL"
 #define CLASS_FUNCTION  "FUNCTION"
 #define CLASS_MISC      "MISC"
+#if PG_VERSION_NUM >= 120000
+#define CLASS_MISC_SET  "MISC_SET"
+#endif
 #define CLASS_READ      "READ"
 #define CLASS_ROLE      "ROLE"
 #define CLASS_WRITE     "WRITE"
@@ -531,9 +536,13 @@ stack_push()
 	 */
 	contextAudit = AllocSetContextCreate(CurrentMemoryContext,
 			"pgaudit stack context",
+#if PG_VERSION_NUM >= 110000
+			ALLOCSET_DEFAULT_SIZES);
+#else
 			ALLOCSET_DEFAULT_MINSIZE,
 			ALLOCSET_DEFAULT_INITSIZE,
 			ALLOCSET_DEFAULT_MAXSIZE);
+#endif
 
 	if (contextAudit == NULL)
 	{
@@ -784,6 +793,17 @@ log_audit_event(AuditEventStackItem *stackItem)
 			className = CLASS_FUNCTION;
 			log_class = LOG_FUNCTION;
 			break;
+
+#if PG_VERSION_NUM >= 120000
+			/*
+			 * SET statements reported as MISC but filtered by MISC_SET
+			 * flags to maintain existing functionality.
+			 */
+		case T_VariableSetStmt:
+			className = CLASS_MISC;
+			log_class = LOG_MISC_SET;
+			break;
+#endif
 
 		default:
 			break;
@@ -1122,7 +1142,6 @@ log_select_dml(Oid auditOid, List *rangeTabls)
 	}
 
 	ListCell *lr;
-	bool first = true;
 	bool found = false;
 
 	/* Do not log if this is an internal statement */
@@ -1189,6 +1208,9 @@ log_select_dml(Oid auditOid, List *rangeTabls)
 			break;
 
 		case RELKIND_INDEX:
+#if PG_VERSION_NUM >= 110000
+		case RELKIND_PARTITIONED_INDEX:
+#endif
 			auditEventStack->auditEvent.objectType = OBJECT_TYPE_INDEX;
 			break;
 
@@ -1284,7 +1306,11 @@ log_function_execute(Oid objectId)
 	 * Logging execution of all pg_catalog functions would make the log
 	 * unusably noisy.
 	 */
+#if PG_VERSION_NUM >= 120000
+	if (IsCatalogNamespace(proc->pronamespace))
+#else
 	if (IsSystemNamespace(proc->pronamespace))
+#endif
 	{
 		ReleaseSysCache(proctup);
 		return;
@@ -1695,6 +1721,22 @@ static const char *objectTypeToString(enum ObjectType objtype)
 	case OBJECT_MATVIEW: return "MATERIALIZED VIEW";
 	case OBJECT_EVENT_TRIGGER: return "EVENT TRIGGER";
 
+#if PG_VERSION_NUM >= 110000
+	case OBJECT_PROCEDURE: return "PROCEDURE";
+	case OBJECT_ROUTINE: return "ROUTINE";
+#endif
+
+#if PG_VERSION_NUM >= 100001
+	case OBJECT_PUBLICATION: return "PUBLICATION";
+	case OBJECT_PUBLICATION_REL: return "PUBLICATION REL";
+	case OBJECT_SUBSCRIPTION: return "SUBSCRIPTION";
+	case OBJECT_STATISTIC_EXT: return "STATISTICS";
+#endif
+
+#if PG_VERSION_NUM >= 90600
+	case OBJECT_ACCESS_METHOD: return "ACCESS METHOD";
+#endif
+
 #if PG_VERSION_NUM >= 90500
 	case OBJECT_AMOP: return "AMOP";
 	case OBJECT_AMPROC: return "AMPROC";
@@ -1706,9 +1748,6 @@ static const char *objectTypeToString(enum ObjectType objtype)
 	case OBJECT_TRANSFORM: return "TRANSFORM";
 	case OBJECT_USER_MAPPING: return "USER MAPPING";
 #endif
-
-
-
 	}
 
 	return "[UNKNOWN]";
@@ -1834,6 +1873,8 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 			event->objectName = NULL;
 			event->objectList = defineStmt->defnames;
 			event->objectType = objectTypeToString(defineStmt->kind);
+			break;
+		default:
 			break;
 		}
 		break;
@@ -2090,6 +2131,8 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 			event->objectList = NULL;
 			event->objectName = NULL;
 			break;
+		default:
+			break;
 		}
 		break;
 
@@ -2172,8 +2215,12 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 			event->objectList = NULL;
 			event->objectName = pstrdup(rename->subname);
 			break;
+		default:
+			break;
 		}
+	default:
 		break;
+	break;
 	}
 }
 
@@ -2511,7 +2558,8 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	AUDIT_DEBUG_LOG("pgaudit_ddl_command_end");
 
 	EventTriggerData *eventData;
-	int result, row;
+	int result;
+	unsigned int row;
 	TupleDesc spiTupDesc;
 	const char *query;
 	MemoryContext contextQuery;
@@ -2541,9 +2589,13 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	contextQuery = AllocSetContextCreate(
 			CurrentMemoryContext,
 			"pgaudit_func_ddl_command_end temporary context",
+#if PG_VERSION_NUM >= 110000
+			ALLOCSET_DEFAULT_SIZES);
+#else
 			ALLOCSET_DEFAULT_MINSIZE,
 			ALLOCSET_DEFAULT_INITSIZE,
 			ALLOCSET_DEFAULT_MAXSIZE);
+#endif
 	contextOld = MemoryContextSwitchTo(contextQuery);
 
 	/* Get information about triggered events */
@@ -2641,7 +2693,8 @@ pgaudit_sql_drop(PG_FUNCTION_ARGS)
 {
 	AUDIT_DEBUG_LOG("pgaudit_sql_drop");
 
-	int result, row;
+	int result;
+	unsigned int row;
 	TupleDesc spiTupDesc;
 	const char *query;
 	MemoryContext contextQuery;
@@ -2671,9 +2724,13 @@ pgaudit_sql_drop(PG_FUNCTION_ARGS)
 	contextQuery = AllocSetContextCreate(
 			CurrentMemoryContext,
 			"pgaudit_func_ddl_command_end temporary context",
+#if PG_VERSION_NUM >= 110000
+			ALLOCSET_DEFAULT_SIZES);
+#else
 			ALLOCSET_DEFAULT_MINSIZE,
 			ALLOCSET_DEFAULT_INITSIZE,
 			ALLOCSET_DEFAULT_MAXSIZE);
+#endif
 	contextOld = MemoryContextSwitchTo(contextQuery);
 
 	/* Return objects affected by the drop statement */
@@ -2760,14 +2817,30 @@ void generate_version_file()
 
 	if (mkdir(location, 0777) < 0 && errno != EEXIST)
 	{
+#if PG_VERSION_NUM >= 120000
+		const char *error_string = strerror(errno);
+		ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+				errmsg(
+				"%s Error mkdir: [%s]",
+				AUDIT_ERROR_PREFIX, error_string)));
+#else
 		AUDIT_ERROR_LOG("Error mkdir: [%s]", strerror(errno));
+#endif
 	}
 	(void) chmod(location, 0777);
 
 	FILE *fp = fopen(version_filename, "w");
 	if (NULL == fp)
 	{
+#if PG_VERSION_NUM >= 120000
+		const char *error_string = strerror(errno);
+		ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+				errmsg(
+				"%s Error creating file: [%s]",
+				AUDIT_ERROR_PREFIX, error_string)));
+#else
 		AUDIT_ERROR_LOG("Error creating file: [%s]", strerror(errno));
+#endif
 	}
 	else
 	{

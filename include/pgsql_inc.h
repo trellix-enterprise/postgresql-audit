@@ -1,6 +1,9 @@
 extern "C" {
 #include "postgres.h"
 
+#if PG_VERSION_NUM >= 120000
+#include "access/relation.h"
+#endif
 #include "access/htup_details.h"
 #include "commands/event_trigger.h"
 #if PG_VERSION_NUM >= 100001

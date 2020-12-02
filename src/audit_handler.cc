@@ -289,8 +289,16 @@ bool Audit_io_handler::handler_start_internal()
 	{
 		if (m_log_io_errors)
 		{
+#if PG_VERSION_NUM >= 120000
+			const char *error_string = strerror(errno);
+			ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+					errmsg(
+					"%s unable to write header msg to %s: %s.",
+					AUDIT_ERROR_PREFIX, error_string)));
+#else
 			AUDIT_ERROR_LOG("unable to write header msg to %s: %s.",
 					m_io_dest, strerror(errno));
+#endif
 		}
 		close();
 		return false;
@@ -374,8 +382,15 @@ ssize_t Audit_unix_socket_handler::write(const char *data, size_t size)
 {
 	if (m_fd < 0)
 	{
+#if PG_VERSION_NUM >= 120000
+		ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+				errmsg(
+				"%s pid %d: socket fd invalid (%d)",
+				AUDIT_ERROR_PREFIX, getpid(), m_fd)));
+#else
 		AUDIT_DEBUG_LOG("pid %d: socket fd invalid (%d)",
 			 getpid(), m_fd);
+#endif
 		errno = EBADF;
 		return -1;
 	}
@@ -383,8 +398,16 @@ ssize_t Audit_unix_socket_handler::write(const char *data, size_t size)
 	ssize_t res = ::write(m_fd, data, size);
 	if (res < 0) // log the error
 	{
+#if PG_VERSION_NUM >= 120000
+		const char *error_string = strerror(errno);
+		ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+				errmsg(
+				"%s pid %d: failed writing to socket: %s. Err: %s",
+				AUDIT_ERROR_PREFIX, getpid(), m_io_dest, error_string)));
+#else
 		AUDIT_ERROR_LOG("pid %d: failed writing to socket: %s. Err: %s",
 				getpid(), m_io_dest, strerror(errno));
+#endif
 		return -1;
 	}
 	return res;
@@ -401,8 +424,16 @@ int Audit_unix_socket_handler::open(const char *io_dest, bool log_errors)
 	{
 		if (log_errors)
 		{
+#if PG_VERSION_NUM >= 120000
+			const char *error_string = strerror(errno);
+			ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+					errmsg(
+					"%s unable to create unix socket: %s.",
+					AUDIT_ERROR_PREFIX, error_string)));
+#else
 			AUDIT_ERROR_LOG("unable to create unix socket: %s.",
 					strerror(errno));
+#endif
 		}
 		return -1;
 	}
@@ -418,9 +449,17 @@ int Audit_unix_socket_handler::open(const char *io_dest, bool log_errors)
 	{
 		if (log_errors)
 		{
+#if PG_VERSION_NUM >= 120000
+			const char *error_string = strerror(errno);
+			ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
+					errmsg(
+					"%s unable to connect to socket: %s. err: %s.",
+					AUDIT_ERROR_PREFIX, m_io_dest, error_string)));
+#else
 			AUDIT_ERROR_LOG(
 				"unable to connect to socket: %s. err: %s.",
 				 m_io_dest, strerror(errno));
+#endif
 		}
 		this->close();
 		::close(sock);
@@ -770,8 +809,6 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 			ListCell *cell;
 			foreach(cell, pItem->auditEvent.objectList)
 			{
-				Value *v = (Value *) cell->data.ptr_value;
-
 				obj_name = get_name_from_cell(cell->data.ptr_value,
 					pItem->auditEvent.useLastInList);
 
@@ -912,6 +949,7 @@ ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *
 		}
 	}
 	yajl_gen_free(gen); // free the generator
+	return res;
 }
 
 pcre *Audit_json_formatter::regex_compile(const char *str)
@@ -1028,7 +1066,6 @@ static void replace_char(char *str, const char tofind, const char rplc)
 const char *Audit_utils::plugin_socket_name()
 {
 	static char name_buff[BUFSIZ];
-	const size_t buff_len = array_elements(name_buff) - 1;
 
 #define SOCKET_PARENT_DIRECTORY "/var/run/db-audit"
 	const char *name_prefix = SOCKET_PARENT_DIRECTORY "/postgresql.audit_";
