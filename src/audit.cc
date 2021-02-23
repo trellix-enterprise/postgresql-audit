@@ -45,6 +45,12 @@
 
 /* macro definitions */
 
+#ifdef __GNUC__
+#define SUPPRESS_NOT_USED_WARN __attribute__ ((unused))
+#else
+#define SUPPRESS_NOT_USED_WARN
+#endif
+
 /* forward declarations */
 
 extern "C" {
@@ -53,6 +59,12 @@ PG_MODULE_MAGIC;
 
 void _PG_init(void);
 };
+
+#if PG_VERSION_NUM >= 130000
+static const char *commandTagToString(enum CommandTag cmdTag);
+#else
+static const char *commandTagToString(const char *cmdTag);
+#endif
 
 // Various variables
 
@@ -701,7 +713,6 @@ log_audit_event(AuditEventStackItem *stackItem)
 	AUDIT_DEBUG_LOG("log_audit_event");
 
 	/* By default, put everything in the MISC class. */
-	int log_class = LOG_MISC;
 	const char *className = CLASS_MISC;
 	MemoryContext contextOld;
 	StringInfoData auditStr;
@@ -718,14 +729,12 @@ log_audit_event(AuditEventStackItem *stackItem)
 		/* All mods go in WRITE class, except EXECUTE */
 	case LOGSTMT_MOD:
 		className = CLASS_WRITE;
-		log_class = LOG_WRITE;
 
 		switch (stackItem->auditEvent.commandTag)
 		{
 			/* Currently, only EXECUTE is different */
 		case T_ExecuteStmt:
 			className = CLASS_MISC;
-			log_class = LOG_MISC;
 			break;
 		default:
 			break;
@@ -735,7 +744,6 @@ log_audit_event(AuditEventStackItem *stackItem)
 		/* These are DDL, unless they are ROLE */
 	case LOGSTMT_DDL:
 		className = CLASS_DDL;
-		log_class = LOG_DDL;
 
 		/* Identify role statements */
 		switch (stackItem->auditEvent.commandTag)
@@ -750,7 +758,6 @@ log_audit_event(AuditEventStackItem *stackItem)
 		case T_AlterRoleSetStmt:
 		case T_AlterDefaultPrivilegesStmt:
 			className = CLASS_ROLE;
-			log_class = LOG_ROLE;
 			break;
 
 			/*
@@ -766,7 +773,6 @@ log_audit_event(AuditEventStackItem *stackItem)
 						COMMAND_DROP_ROLE) == 0)
 			{
 				className = CLASS_ROLE;
-				log_class = LOG_ROLE;
 			}
 			break;
 
@@ -785,13 +791,11 @@ log_audit_event(AuditEventStackItem *stackItem)
 		case T_PrepareStmt:
 		case T_PlannedStmt:
 			className = CLASS_READ;
-			log_class = LOG_READ;
 			break;
 
 			/* FUNCTION statements */
 		case T_DoStmt:
 			className = CLASS_FUNCTION;
-			log_class = LOG_FUNCTION;
 			break;
 
 #if PG_VERSION_NUM >= 120000
@@ -801,7 +805,6 @@ log_audit_event(AuditEventStackItem *stackItem)
 			 */
 		case T_VariableSetStmt:
 			className = CLASS_MISC;
-			log_class = LOG_MISC_SET;
 			break;
 #endif
 
@@ -1035,7 +1038,7 @@ audit_on_acl(Datum aclDatum,
 /*
  * Check if a role has any of the permissions in the mask on a relation.
  */
-static bool
+SUPPRESS_NOT_USED_WARN static bool
 audit_on_relation(Oid relOid,
                   Oid auditOid,
                   AclMode mask)
@@ -1073,7 +1076,7 @@ audit_on_relation(Oid relOid,
 /*
  * Check if a role has any of the permissions in the mask on a column.
  */
-static bool
+SUPPRESS_NOT_USED_WARN static bool
 audit_on_attribute(Oid relOid,
                    AttrNumber attNum,
                    Oid auditOid,
@@ -1117,14 +1120,21 @@ audit_on_attribute(Oid relOid,
 #define initialize_event(eventptr, level, tag, command_value) \
 	eventptr->auditEvent.logStmtLevel = level; \
 	eventptr->auditEvent.commandTag = tag; \
-	eventptr->auditEvent.command = command_value;
+	eventptr->auditEvent.command = commandTagToString(command_value);
 
 // Collect common event initialization into macros to keep things synchronized.
 // Applies to log_select_dml() and to audit_ExecutorStart_hook().
+#if PG_VERSION_NUM >= 130000
+#define initialize_select_event(eventptr) initialize_event(eventptr, LOGSTMT_ALL, T_SelectStmt, CMDTAG_SELECT)
+#define initialize_insert_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_InsertStmt, CMDTAG_INSERT)
+#define initialize_update_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_UpdateStmt, CMDTAG_UPDATE)
+#define initialize_delete_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_DeleteStmt, CMDTAG_DELETE)
+#else
 #define initialize_select_event(eventptr) initialize_event(eventptr, LOGSTMT_ALL, T_SelectStmt, COMMAND_SELECT)
 #define initialize_insert_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_InsertStmt, COMMAND_INSERT)
 #define initialize_update_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_UpdateStmt, COMMAND_UPDATE)
 #define initialize_delete_event(eventptr) initialize_event(eventptr, LOGSTMT_MOD, T_DeleteStmt, COMMAND_DELETE)
+#endif
 
 /*
  * Create AuditEvents for SELECT/DML operations via executor permissions checks.
@@ -1328,7 +1338,11 @@ log_function_execute(Oid objectId)
 	/* Log the function call */
 	stackItem->auditEvent.logStmtLevel = LOGSTMT_ALL;
 	stackItem->auditEvent.commandTag = T_DoStmt;
+#if PG_VERSION_NUM >= 130000
+	stackItem->auditEvent.command = commandTagToString(CMDTAG_EXECUTE);
+#else
 	stackItem->auditEvent.command = COMMAND_EXECUTE;
+#endif
 	stackItem->auditEvent.objectType = OBJECT_TYPE_FUNCTION;
 	stackItem->auditEvent.commandText = stackItem->next->auditEvent.commandText;
 	log_audit_event(stackItem);
@@ -1347,7 +1361,7 @@ static ExecutorCheckPerms_hook_type next_ExecutorCheckPerms_hook = NULL;
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 static object_access_hook_type next_object_access_hook = NULL;
 static ExecutorStart_hook_type next_ExecutorStart_hook = NULL;
-static ExecutorEnd_hook_type next_ExecutorEnd_hook = NULL;
+SUPPRESS_NOT_USED_WARN static ExecutorEnd_hook_type next_ExecutorEnd_hook = NULL;
 static ClientAuthentication_hook_type next_ClientAuthentication_hook = NULL;
 static emit_log_hook_type next_emit_log_hook = NULL; // Bug #1136533, hook to capture invalid statement syntax
 
@@ -1368,7 +1382,6 @@ static char *remoteIP(int s)
 	socklen_t len;
 	struct sockaddr_storage addr;
 	static char ipstr[INET6_ADDRSTRLEN];
-	int port;
 
 	len = sizeof addr;
 	getpeername(s, (struct sockaddr*)&addr, &len);
@@ -1377,19 +1390,16 @@ static char *remoteIP(int s)
 	if (addr.ss_family == AF_INET)
 	{
 		struct sockaddr_in *s = (struct sockaddr_in *)&addr;
-		port = ntohs(s->sin_port);
 		inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
 	}
 	else if (addr.ss_family == AF_INET6)
 	{
 		// AF_INET6
 		struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
-		port = ntohs(s->sin6_port);
 		inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
 	}
 	else if (addr.ss_family == AF_UNIX)
 	{
-		port = 0;
 		strcpy(ipstr, "127.0.0.1");
 	}
 
@@ -1441,6 +1451,84 @@ static void updateProc(PostgreSQL_proc *proc, Port *port)
 	{
 		proc->ip = remoteIP(port->sock);
 	}
+
+	// appname from guc
+	const char *guc_appname = NULL;
+	ListCell* cell;
+	foreach(cell, port->guc_options) {  // alternating list of option name and value
+
+		// In Postgres, the macro lfirst() was used to mean "the data in this
+		// cons cell". To avoid changing every usage of lfirst(), that meaning
+		// has been kept. As a result, lfirst() takes a ListCell and returns
+		// the data it contains.
+		if (strcmp("application_name", (const char*)lfirst(cell))) {
+			continue;
+		}
+		else
+		{
+#if PG_VERSION_NUM >= 130000
+			guc_appname = (const char*)lfirst(lnext(port->guc_options, cell));
+#else
+			guc_appname = (const char*)lfirst(lnext(cell));
+#endif
+			break;
+		}
+	}
+	
+	if (guc_appname && guc_appname[0] != '\0')
+		proc->appname = guc_appname;
+
+	// os_user from SO_PEERCRED
+	struct sockaddr_storage addr = {};
+	socklen_t len = sizeof addr;
+	if (getsockname(port->sock, (struct sockaddr*)&addr, &len) == -1) {
+		AUDIT_DEBUG_LOG("updateProc: getsockname failed: %m");
+		return;
+	}
+
+	if (addr.ss_family != AF_UNIX)
+		return;
+
+	struct ucred cred = {};
+	socklen_t cred_len = sizeof cred;
+	if (getsockopt(port->sock, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == -1) {
+		AUDIT_DEBUG_LOG("updateProc: getsockopt SO_PEERCRED failed: %m");
+		return;
+	}
+
+	if (!cred.pid) {
+		AUDIT_DEBUG_LOG("updateProc: cred.pid == 0");
+		return;
+	}
+
+	static char buf[BUFSIZ];
+	static struct passwd pwbuf;
+	struct passwd* pwd = NULL;
+	if (getpwuid_r(cred.uid, &pwbuf, buf, sizeof(buf), &pwd) || !pwd) {
+		AUDIT_DEBUG_LOG("updateProc: getpwuid_r [%d] failed: %m", cred.uid);
+		return;
+	}
+
+	proc->os_user = pwd->pw_name;
+
+	if (proc->appname[0])
+		return;
+
+	// appname from SO_PEERCRED
+	static char proc_buf[PATH_MAX+1];
+	static char data[PATH_MAX+1];
+	snprintf(proc_buf, sizeof(proc_buf) - 1, "/proc/%d/exe", cred.pid);
+	if (readlink(proc_buf, data, sizeof(data) - 1) == -1) {
+		AUDIT_DEBUG_LOG("updateProc: readlink[%s] failed: %m", proc_buf);
+		return;
+	}
+
+	const char* appname = data;
+	for (int i = 0; data[i]; i++)
+		if (data[i] == '/')
+			appname = &data[i];
+	if (appname[1])
+		proc->appname = &appname[1];
 }
 
 static bool initHandlers(Port *port, PostgreSQL_proc *proc)
@@ -1579,7 +1667,11 @@ audit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
 			break;
 
 		default:
+#if PG_VERSION_NUM >= 130000
+			initialize_event(stackItem, LOGSTMT_ALL, T_Invalid, CMDTAG_UNKNOWN);
+#else
 			initialize_event(stackItem, LOGSTMT_ALL, T_Invalid, COMMAND_UNKNOWN);
+#endif
 			break;
 		}
 
@@ -1620,7 +1712,7 @@ audit_ExecutorCheckPerms_hook(List *rangeTabls, bool abort1)
 {
 	AUDIT_DEBUG_LOG("audit_ExecutorCheckPerms_hook");
 
-	Oid auditOid;
+	Oid auditOid = InvalidOid;
 
 	/* Get the audit oid if the role exists */
 	// auditOid = get_role_oid(auditRole, true);
@@ -1752,6 +1844,221 @@ static const char *objectTypeToString(enum ObjectType objtype)
 
 	return "[UNKNOWN]";
 }
+
+
+// convert all known command tags to string
+
+#if PG_VERSION_NUM >= 130000
+static const char *commandTagToString(enum CommandTag cmdTag)
+{
+	switch (cmdTag)
+	{
+	case CMDTAG_UNKNOWN: return "???";
+	case CMDTAG_ALTER_ACCESS_METHOD: return "ALTER ACCESS METHOD";
+	case CMDTAG_ALTER_AGGREGATE: return "ALTER AGGREGATE";
+	case CMDTAG_ALTER_CAST: return "ALTER CAST";
+	case CMDTAG_ALTER_COLLATION: return "ALTER COLLATION";
+	case CMDTAG_ALTER_CONSTRAINT: return "ALTER CONSTRAINT";
+	case CMDTAG_ALTER_CONVERSION: return "ALTER CONVERSION";
+	case CMDTAG_ALTER_DATABASE: return "ALTER DATABASE";
+	case CMDTAG_ALTER_DEFAULT_PRIVILEGES: return "ALTER DEFAULT PRIVILEGES";
+	case CMDTAG_ALTER_DOMAIN: return "ALTER DOMAIN";
+	case CMDTAG_ALTER_EVENT_TRIGGER: return "ALTER EVENT TRIGGER";
+	case CMDTAG_ALTER_EXTENSION: return "ALTER EXTENSION";
+	case CMDTAG_ALTER_FOREIGN_DATA_WRAPPER: return "ALTER FOREIGN DATA WRAPPER";
+	case CMDTAG_ALTER_FOREIGN_TABLE: return "ALTER FOREIGN TABLE";
+	case CMDTAG_ALTER_FUNCTION: return "ALTER FUNCTION";
+	case CMDTAG_ALTER_INDEX: return "ALTER INDEX";
+	case CMDTAG_ALTER_LANGUAGE: return "ALTER LANGUAGE";
+	case CMDTAG_ALTER_LARGE_OBJECT: return "ALTER LARGE OBJECT";
+	case CMDTAG_ALTER_MATERIALIZED_VIEW: return "ALTER MATERIALIZED VIEW";
+	case CMDTAG_ALTER_OPERATOR: return "ALTER OPERATOR";
+	case CMDTAG_ALTER_OPERATOR_CLASS: return "ALTER OPERATOR CLASS";
+	case CMDTAG_ALTER_OPERATOR_FAMILY: return "ALTER OPERATOR FAMILY";
+	case CMDTAG_ALTER_POLICY: return "ALTER POLICY";
+	case CMDTAG_ALTER_PROCEDURE: return "ALTER PROCEDURE";
+	case CMDTAG_ALTER_PUBLICATION: return "ALTER PUBLICATION";
+	case CMDTAG_ALTER_ROLE: return "ALTER ROLE";
+	case CMDTAG_ALTER_ROUTINE: return "ALTER ROUTINE";
+	case CMDTAG_ALTER_RULE: return "ALTER RULE";
+	case CMDTAG_ALTER_SCHEMA: return "ALTER SCHEMA";
+	case CMDTAG_ALTER_SEQUENCE: return "ALTER SEQUENCE";
+	case CMDTAG_ALTER_SERVER: return "ALTER SERVER";
+	case CMDTAG_ALTER_STATISTICS: return "ALTER STATISTICS";
+	case CMDTAG_ALTER_SUBSCRIPTION: return "ALTER SUBSCRIPTION";
+	case CMDTAG_ALTER_SYSTEM: return "ALTER SYSTEM";
+	case CMDTAG_ALTER_TABLE: return "ALTER TABLE";
+	case CMDTAG_ALTER_TABLESPACE: return "ALTER TABLESPACE";
+	case CMDTAG_ALTER_TEXT_SEARCH_CONFIGURATION: return "ALTER TEXT SEARCH CONFIGURATION";
+	case CMDTAG_ALTER_TEXT_SEARCH_DICTIONARY: return "ALTER TEXT SEARCH DICTIONARY";
+	case CMDTAG_ALTER_TEXT_SEARCH_PARSER: return "ALTER TEXT SEARCH PARSER";
+	case CMDTAG_ALTER_TEXT_SEARCH_TEMPLATE: return "ALTER TEXT SEARCH TEMPLATE";
+	case CMDTAG_ALTER_TRANSFORM: return "ALTER TRANSFORM";
+	case CMDTAG_ALTER_TRIGGER: return "ALTER TRIGGER";
+	case CMDTAG_ALTER_TYPE: return "ALTER TYPE";
+	case CMDTAG_ALTER_USER_MAPPING: return "ALTER USER MAPPING";
+	case CMDTAG_ALTER_VIEW: return "ALTER VIEW";
+	case CMDTAG_ANALYZE: return "ANALYZE";
+	case CMDTAG_BEGIN: return "BEGIN";
+	case CMDTAG_CALL: return "CALL";
+	case CMDTAG_CHECKPOINT: return "CHECKPOINT";
+	case CMDTAG_CLOSE: return "CLOSE";
+	case CMDTAG_CLOSE_CURSOR: return "CLOSE CURSOR";
+	case CMDTAG_CLOSE_CURSOR_ALL: return "CLOSE CURSOR ALL";
+	case CMDTAG_CLUSTER: return "CLUSTER";
+	case CMDTAG_COMMENT: return "COMMENT";
+	case CMDTAG_COMMIT: return "COMMIT";
+	case CMDTAG_COMMIT_PREPARED: return "COMMIT PREPARED";
+	case CMDTAG_COPY: return "COPY";
+	case CMDTAG_COPY_FROM: return "COPY FROM";
+	case CMDTAG_CREATE_ACCESS_METHOD: return "CREATE ACCESS METHOD";
+	case CMDTAG_CREATE_AGGREGATE: return "CREATE AGGREGATE";
+	case CMDTAG_CREATE_CAST: return "CREATE CAST";
+	case CMDTAG_CREATE_COLLATION: return "CREATE COLLATION";
+	case CMDTAG_CREATE_CONSTRAINT: return "CREATE CONSTRAINT";
+	case CMDTAG_CREATE_CONVERSION: return "CREATE CONVERSION";
+	case CMDTAG_CREATE_DATABASE: return "CREATE DATABASE";
+	case CMDTAG_CREATE_DOMAIN: return "CREATE DOMAIN";
+	case CMDTAG_CREATE_EVENT_TRIGGER: return "CREATE EVENT TRIGGER";
+	case CMDTAG_CREATE_EXTENSION: return "CREATE EXTENSION";
+	case CMDTAG_CREATE_FOREIGN_DATA_WRAPPER: return "CREATE FOREIGN DATA WRAPPER";
+	case CMDTAG_CREATE_FOREIGN_TABLE: return "CREATE FOREIGN TABLE";
+	case CMDTAG_CREATE_FUNCTION: return "CREATE FUNCTION";
+	case CMDTAG_CREATE_INDEX: return "CREATE INDEX";
+	case CMDTAG_CREATE_LANGUAGE: return "CREATE LANGUAGE";
+	case CMDTAG_CREATE_MATERIALIZED_VIEW: return "CREATE MATERIALIZED VIEW";
+	case CMDTAG_CREATE_OPERATOR: return "CREATE OPERATOR";
+	case CMDTAG_CREATE_OPERATOR_CLASS: return "CREATE OPERATOR CLASS";
+	case CMDTAG_CREATE_OPERATOR_FAMILY: return "CREATE OPERATOR FAMILY";
+	case CMDTAG_CREATE_POLICY: return "CREATE POLICY";
+	case CMDTAG_CREATE_PROCEDURE: return "CREATE PROCEDURE";
+	case CMDTAG_CREATE_PUBLICATION: return "CREATE PUBLICATION";
+	case CMDTAG_CREATE_ROLE: return "CREATE ROLE";
+	case CMDTAG_CREATE_ROUTINE: return "CREATE ROUTINE";
+	case CMDTAG_CREATE_RULE: return "CREATE RULE";
+	case CMDTAG_CREATE_SCHEMA: return "CREATE SCHEMA";
+	case CMDTAG_CREATE_SEQUENCE: return "CREATE SEQUENCE";
+	case CMDTAG_CREATE_SERVER: return "CREATE SERVER";
+	case CMDTAG_CREATE_STATISTICS: return "CREATE STATISTICS";
+	case CMDTAG_CREATE_SUBSCRIPTION: return "CREATE SUBSCRIPTION";
+	case CMDTAG_CREATE_TABLE: return "CREATE TABLE";
+	case CMDTAG_CREATE_TABLE_AS: return "CREATE TABLE AS";
+	case CMDTAG_CREATE_TABLESPACE: return "CREATE TABLESPACE";
+	case CMDTAG_CREATE_TEXT_SEARCH_CONFIGURATION: return "CREATE TEXT SEARCH CONFIGURATION";
+	case CMDTAG_CREATE_TEXT_SEARCH_DICTIONARY: return "CREATE TEXT SEARCH DICTIONARY";
+	case CMDTAG_CREATE_TEXT_SEARCH_PARSER: return "CREATE TEXT SEARCH PARSER";
+	case CMDTAG_CREATE_TEXT_SEARCH_TEMPLATE: return "CREATE TEXT SEARCH TEMPLATE";
+	case CMDTAG_CREATE_TRANSFORM: return "CREATE TRANSFORM";
+	case CMDTAG_CREATE_TRIGGER: return "CREATE TRIGGER";
+	case CMDTAG_CREATE_TYPE: return "CREATE TYPE";
+	case CMDTAG_CREATE_USER_MAPPING: return "CREATE USER MAPPING";
+	case CMDTAG_CREATE_VIEW: return "CREATE VIEW";
+	case CMDTAG_DEALLOCATE: return "DEALLOCATE";
+	case CMDTAG_DEALLOCATE_ALL: return "DEALLOCATE ALL";
+	case CMDTAG_DECLARE_CURSOR: return "DECLARE CURSOR";
+	case CMDTAG_DELETE: return "DELETE";
+	case CMDTAG_DISCARD: return "DISCARD";
+	case CMDTAG_DISCARD_ALL: return "DISCARD ALL";
+	case CMDTAG_DISCARD_PLANS: return "DISCARD PLANS";
+	case CMDTAG_DISCARD_SEQUENCES: return "DISCARD SEQUENCES";
+	case CMDTAG_DISCARD_TEMP: return "DISCARD TEMP";
+	case CMDTAG_DO: return "DO";
+	case CMDTAG_DROP_ACCESS_METHOD: return "DROP ACCESS METHOD";
+	case CMDTAG_DROP_AGGREGATE: return "DROP AGGREGATE";
+	case CMDTAG_DROP_CAST: return "DROP CAST";
+	case CMDTAG_DROP_COLLATION: return "DROP COLLATION";
+	case CMDTAG_DROP_CONSTRAINT: return "DROP CONSTRAINT";
+	case CMDTAG_DROP_CONVERSION: return "DROP CONVERSION";
+	case CMDTAG_DROP_DATABASE: return "DROP DATABASE";
+	case CMDTAG_DROP_DOMAIN: return "DROP DOMAIN";
+	case CMDTAG_DROP_EVENT_TRIGGER: return "DROP EVENT TRIGGER";
+	case CMDTAG_DROP_EXTENSION: return "DROP EXTENSION";
+	case CMDTAG_DROP_FOREIGN_DATA_WRAPPER: return "DROP FOREIGN DATA WRAPPER";
+	case CMDTAG_DROP_FOREIGN_TABLE: return "DROP FOREIGN TABLE";
+	case CMDTAG_DROP_FUNCTION: return "DROP FUNCTION";
+	case CMDTAG_DROP_INDEX: return "DROP INDEX";
+	case CMDTAG_DROP_LANGUAGE: return "DROP LANGUAGE";
+	case CMDTAG_DROP_MATERIALIZED_VIEW: return "DROP MATERIALIZED VIEW";
+	case CMDTAG_DROP_OPERATOR: return "DROP OPERATOR";
+	case CMDTAG_DROP_OPERATOR_CLASS: return "DROP OPERATOR CLASS";
+	case CMDTAG_DROP_OPERATOR_FAMILY: return "DROP OPERATOR FAMILY";
+	case CMDTAG_DROP_OWNED: return "DROP OWNED";
+	case CMDTAG_DROP_POLICY: return "DROP POLICY";
+	case CMDTAG_DROP_PROCEDURE: return "DROP PROCEDURE";
+	case CMDTAG_DROP_PUBLICATION: return "DROP PUBLICATION";
+	case CMDTAG_DROP_ROLE: return "DROP ROLE";
+	case CMDTAG_DROP_ROUTINE: return "DROP ROUTINE";
+	case CMDTAG_DROP_RULE: return "DROP RULE";
+	case CMDTAG_DROP_SCHEMA: return "DROP SCHEMA";
+	case CMDTAG_DROP_SEQUENCE: return "DROP SEQUENCE";
+	case CMDTAG_DROP_SERVER: return "DROP SERVER";
+	case CMDTAG_DROP_STATISTICS: return "DROP STATISTICS";
+	case CMDTAG_DROP_SUBSCRIPTION: return "DROP SUBSCRIPTION";
+	case CMDTAG_DROP_TABLE: return "DROP TABLE";
+	case CMDTAG_DROP_TABLESPACE: return "DROP TABLESPACE";
+	case CMDTAG_DROP_TEXT_SEARCH_CONFIGURATION: return "DROP TEXT SEARCH CONFIGURATION";
+	case CMDTAG_DROP_TEXT_SEARCH_DICTIONARY: return "DROP TEXT SEARCH DICTIONARY";
+	case CMDTAG_DROP_TEXT_SEARCH_PARSER: return "DROP TEXT SEARCH PARSER";
+	case CMDTAG_DROP_TEXT_SEARCH_TEMPLATE: return "DROP TEXT SEARCH TEMPLATE";
+	case CMDTAG_DROP_TRANSFORM: return "DROP TRANSFORM";
+	case CMDTAG_DROP_TRIGGER: return "DROP TRIGGER";
+	case CMDTAG_DROP_TYPE: return "DROP TYPE";
+	case CMDTAG_DROP_USER_MAPPING: return "DROP USER MAPPING";
+	case CMDTAG_DROP_VIEW: return "DROP VIEW";
+	case CMDTAG_EXECUTE: return "EXECUTE";
+	case CMDTAG_EXPLAIN: return "EXPLAIN";
+	case CMDTAG_FETCH: return "FETCH";
+	case CMDTAG_GRANT: return "GRANT";
+	case CMDTAG_GRANT_ROLE: return "GRANT ROLE";
+	case CMDTAG_IMPORT_FOREIGN_SCHEMA: return "IMPORT FOREIGN SCHEMA";
+	case CMDTAG_INSERT: return "INSERT";
+	case CMDTAG_LISTEN: return "LISTEN";
+	case CMDTAG_LOAD: return "LOAD";
+	case CMDTAG_LOCK_TABLE: return "LOCK TABLE";
+	case CMDTAG_MOVE: return "MOVE";
+	case CMDTAG_NOTIFY: return "NOTIFY";
+	case CMDTAG_PREPARE: return "PREPARE";
+	case CMDTAG_PREPARE_TRANSACTION: return "PREPARE TRANSACTION";
+	case CMDTAG_REASSIGN_OWNED: return "REASSIGN OWNED";
+	case CMDTAG_REFRESH_MATERIALIZED_VIEW: return "REFRESH MATERIALIZED VIEW";
+	case CMDTAG_REINDEX: return "REINDEX";
+	case CMDTAG_RELEASE: return "RELEASE";
+	case CMDTAG_RESET: return "RESET";
+	case CMDTAG_REVOKE: return "REVOKE";
+	case CMDTAG_REVOKE_ROLE: return "REVOKE ROLE";
+	case CMDTAG_ROLLBACK: return "ROLLBACK";
+	case CMDTAG_ROLLBACK_PREPARED: return "ROLLBACK PREPARED";
+	case CMDTAG_SAVEPOINT: return "SAVEPOINT";
+	case CMDTAG_SECURITY_LABEL: return "SECURITY LABEL";
+	case CMDTAG_SELECT: return "SELECT";
+	case CMDTAG_SELECT_FOR_KEY_SHARE: return "SELECT FOR KEY SHARE";
+	case CMDTAG_SELECT_FOR_NO_KEY_UPDATE: return "SELECT FOR NO KEY UPDATE";
+	case CMDTAG_SELECT_FOR_SHARE: return "SELECT FOR SHARE";
+	case CMDTAG_SELECT_FOR_UPDATE: return "SELECT FOR UPDATE";
+	case CMDTAG_SELECT_INTO: return "SELECT INTO";
+	case CMDTAG_SET: return "SET";
+	case CMDTAG_SET_CONSTRAINTS: return "SET CONSTRAINTS";
+	case CMDTAG_SHOW: return "SHOW";
+	case CMDTAG_START_TRANSACTION: return "START TRANSACTION";
+	case CMDTAG_TRUNCATE_TABLE: return "TRUNCATE TABLE";
+	case CMDTAG_UNLISTEN: return "UNLISTEN";
+	case CMDTAG_UPDATE: return "UPDATE";
+	case CMDTAG_VACUUM: return "VACUUM";
+	case COMMAND_TAG_NEXTTAG: return "";
+	}
+	return "???";
+}
+#else
+static const char *commandTagToString(const char *cmdTag)
+{
+	if (cmdTag != NULL)
+	{
+		 return cmdTag;
+	}
+	return COMMAND_UNKNOWN;
+}
+#endif
+
 
 // get role name from a role spec
 
@@ -2241,7 +2548,11 @@ audit_ProcessUtility_hook(
 							 QueryEnvironment *queryEnv,
 #endif
                              DestReceiver *dest,
+#if PG_VERSION_NUM >= 130000
+                             QueryCompletion *queryCompletion)
+#else
                              char *completionTag)
+#endif
 {
 	AUDIT_DEBUG_LOG("audit_ProcessUtility_hook");
 
@@ -2283,7 +2594,7 @@ audit_ProcessUtility_hook(
 		stackItem->auditEvent.logStmtLevel = LOGSTMT_NONE; // Prevent unnecessary logic activation in log_audit_event()
 #endif
 		stackItem->auditEvent.commandTag = nodeTag(parsetree);
-		stackItem->auditEvent.command = CreateCommandTag(parsetree);
+		stackItem->auditEvent.command = commandTagToString(CreateCommandTag(parsetree));
 		stackItem->auditEvent.commandText = queryString;
 
 		/*
@@ -2298,7 +2609,18 @@ audit_ProcessUtility_hook(
 	}
 
 	/* Call the standard process utility chain. */
-#if PG_VERSION_NUM >= 100001
+#if PG_VERSION_NUM >= 130000
+	if (next_ProcessUtility_hook)
+	{
+		(*next_ProcessUtility_hook) (pstmt, queryString, context,
+				params, queryEnv, dest, queryCompletion);
+	}
+	else
+	{
+		standard_ProcessUtility(pstmt, queryString, context,
+				params, queryEnv, dest, queryCompletion);
+	}
+#elif PG_VERSION_NUM < 130000 && PG_VERSION_NUM >= 100001
 	if (next_ProcessUtility_hook)
 	{
 		(*next_ProcessUtility_hook) (pstmt, queryString, context,
@@ -2478,7 +2800,11 @@ audit_emit_log_hook(ErrorData *edata)
 		// Default values
 		stackItem->auditEvent.logStmtLevel = LOGSTMT_ALL;
 		stackItem->auditEvent.commandTag = T_Invalid;
+#if PG_VERSION_NUM >= 130000
+		stackItem->auditEvent.command = commandTagToString(CMDTAG_UNKNOWN);
+#else
 		stackItem->auditEvent.command = COMMAND_INVALID_SYNTAX;
+#endif
 		stackItem->auditEvent.commandText = debug_query_string;
 
 		log_audit_event(stackItem);
@@ -2610,7 +2936,7 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	auditEventStack->auditEvent.commandTag =
 		nodeTag(eventData->parsetree);
 	auditEventStack->auditEvent.command =
-		CreateCommandTag(eventData->parsetree);
+		commandTagToString(CreateCommandTag(eventData->parsetree));
 
 	/* Return objects affected by the (non drop) DDL statement */
 	query = "SELECT UPPER(object_type), object_identity, UPPER(command_tag)\n"

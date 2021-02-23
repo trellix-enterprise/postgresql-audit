@@ -58,6 +58,8 @@ struct PostgreSQL_proc {
 	const char *priv_user;
 	const char *hostname;
 	const char *ip;
+	const char *os_user;
+	const char *appname;
 	unsigned int query_id;
 	bool connected;
 
@@ -68,6 +70,8 @@ struct PostgreSQL_proc {
 		priv_user(""),
 		hostname(""),
 		ip(""),
+		os_user(""),
+		appname(""),
 		query_id(0),
 		connected(false)
 	{

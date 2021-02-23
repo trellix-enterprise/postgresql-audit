@@ -203,9 +203,14 @@ ssize_t Audit_file_handler::write(const char *data, size_t size)
 		return -1;
 	}
 
+	if (size > SSIZE_MAX)
+	{
+		AUDIT_DEBUG_LOG("unsigned write size is larger than signed max");
+	}
 	// careful: pay attention to ordering of arguments to fwrite
 	ssize_t res = fwrite(data, 1, size, m_log_file);
-	if (res != size) // log the error
+	// In POSIX, a negative return from fwrite indicates an error
+	if (res < 0 || res != (ssize_t) size) // log the error
 	{
 		AUDIT_DEBUG_LOG("pid %d: failed writing to file: %s. Err: %s",
 				getpid(), m_io_dest, strerror(errno));
@@ -294,7 +299,7 @@ bool Audit_io_handler::handler_start_internal()
 			ereport(WARNING, (errcode(ERRCODE_IO_ERROR),
 					errmsg(
 					"%s unable to write header msg to %s: %s.",
-					AUDIT_ERROR_PREFIX, error_string)));
+					AUDIT_ERROR_PREFIX, m_io_dest, error_string)));
 #else
 			AUDIT_ERROR_LOG("unable to write header msg to %s: %s.",
 					m_io_dest, strerror(errno));
@@ -303,7 +308,7 @@ bool Audit_io_handler::handler_start_internal()
 		close();
 		return false;
 	}
-	AUDIT_DEBUG_LOG("%s success opening %s: %s.", m_io_type, m_io_dest);
+	AUDIT_DEBUG_LOG("%s success opening %s.", m_io_type, m_io_dest);
 	return true;
 }
 
@@ -682,16 +687,28 @@ static std::string get_name_from_cell(void *cell_ptr, bool useLastInList)
 		if (useLastInList)
 		{
 			ListCell *last = list_tail(list);
+#if PG_VERSION_NUM >= 130000
+			v = (Value *) last->ptr_value;
+#else
 			v = (Value *) last->data.ptr_value;
+#endif
 			obj_name += v->val.str;
 		}
 		else
 		{
 			foreach(cell, list)
 			{
+#if PG_VERSION_NUM >= 130000
+				obj_name += get_name_from_cell(cell->ptr_value, false);	// recursive call
+#else
 				obj_name += get_name_from_cell(cell->data.ptr_value, false);	// recursive call
+#endif
 
+#if PG_VERSION_NUM >= 130000
+				if (lnext(list, cell) != NULL)
+#else
 				if (lnext(cell) != NULL)
+#endif
 				{
 					obj_name += ".";
 				}
@@ -760,6 +777,9 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 	yajl_add_string_val(gen, "host", proc->hostname);
 	yajl_add_string_val(gen, "ip", proc->ip);
 
+	yajl_add_string_val(gen, "os_user", proc->os_user);
+	yajl_add_string_val(gen, "appname", proc->appname);
+
 	const char *cmd = pItem->auditEvent.command;
 	yajl_add_string_val(gen, "cmd", cmd);
 
@@ -797,7 +817,11 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 		if (pItem->auditEvent.useLastInList && list_length(pItem->auditEvent.objectList) > 1)
 		{
 			ListCell *last = list_tail(pItem->auditEvent.objectList);
+#if PG_VERSION_NUM >= 130000
+			Value *v = (Value *) last->ptr_value;
+#else
 			Value *v = (Value *) last->data.ptr_value;
+#endif
 			obj_name = v->val.str;
 
 			yajl_gen_map_open(gen);
@@ -809,7 +833,11 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 			ListCell *cell;
 			foreach(cell, pItem->auditEvent.objectList)
 			{
+#if PG_VERSION_NUM >= 130000
+				obj_name = get_name_from_cell(cell->ptr_value,
+#else
 				obj_name = get_name_from_cell(cell->data.ptr_value,
+#endif
 					pItem->auditEvent.useLastInList);
 
 				yajl_gen_map_open(gen);
@@ -929,6 +957,9 @@ ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *
 	yajl_add_string_val(gen, "priv_user", proc->priv_user);
 	yajl_add_string_val(gen, "host", proc->hostname);
 	yajl_add_string_val(gen, "ip", proc->ip);
+
+	yajl_add_string_val(gen, "os_user", proc->os_user);
+	yajl_add_string_val(gen, "appname", proc->appname);
 
 	yajl_add_string_val(gen, "cmd", command);
 	yajl_add_string_val(gen, "query", query);
@@ -1098,7 +1129,7 @@ const char *Audit_utils::plugin_socket_name()
 	else
 	{
 		AUDIT_ERROR_LOG("name_buff not big enough to set default name (have %lu bytes, need %lu).",
-				sizeof(name_buff), len);
+				(unsigned long)sizeof(name_buff), (unsigned long)len);
 	}
 		
 	// replace / with _ in filename part of the full name

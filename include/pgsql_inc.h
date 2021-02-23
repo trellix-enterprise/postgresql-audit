@@ -1,6 +1,9 @@
 extern "C" {
 #include "postgres.h"
 
+#if PG_VERSION_NUM >= 130000
+#include "tcop/cmdtag.h"
+#endif
 #if PG_VERSION_NUM >= 120000
 #include "access/relation.h"
 #endif
