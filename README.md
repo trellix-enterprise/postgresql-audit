@@ -9,10 +9,10 @@ as a standalone audit solution or configured to feed data to external monitoring
 Installation and Configuration
 ------------------------------
 
-Official McAfee plugin binary releases can be downloaded from the Releases page on GitHub:
+Official McAfee plugin binary releases can be downloaded from the Releases page on GitHub: <br/>
 https://github.com/mcafee/postgresql-audit/releases
 
-Please refer to the wiki on GitHub for detailed installation and configuration instructions:
+Please refer to the wiki on GitHub for detailed installation and configuration instructions: <br/>
 https://github.com/mcafee/postgresql-audit/wiki
 
 Issues
