@@ -15,6 +15,7 @@ REGRESS = audit
 REGRESS_OPTS = --temp-config=$(top_srcdir)/contrib/postgresql-audit/audit.conf
 
 PG_CPPFLAGS += -Werror -I../include -I../yajl/include -I../pcre -fPIC \
+	-DENABLE_NLS \
 	-DPOSTGRESQL_AUDIT_PLUGIN_REVISION='"@POSTGRESQL_AUDIT_PLUGIN_REVISION@"' \
 	-DPOSTGRESQL_AUDIT_PLUGIN_VERSION='"@POSTGRESQL_AUDIT_PLUGIN_VERSION@"'
 

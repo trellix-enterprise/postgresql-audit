@@ -6,6 +6,11 @@ extern "C" {
  */
 
 // Revised to use C++ conventions - struct xxx instead of typedef struct xxx{ ... } xxx;
+struct AuditError {
+    int sqlerrcode;       /* encoded ERRSTATE */
+    const char* message;  /* primary error message (translated) */
+};
+
 struct AuditEvent
 {
     int64 statementId;          /* Simple counter */
@@ -29,6 +34,8 @@ struct AuditEvent
     const char *className;      /* Class of item being logged */
     List *objectList;           /* List of objects, e.g. in a DROP statement */
     bool useLastInList;         /* True if last element in list is the object name */
+
+    List* errorList;
 };
 
 /*

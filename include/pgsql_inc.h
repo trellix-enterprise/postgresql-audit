@@ -26,6 +26,7 @@ extern "C" {
 #include "miscadmin.h"
 #include "libpq/auth.h"
 #include "nodes/nodes.h"
+#include "nodes/pg_list.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"

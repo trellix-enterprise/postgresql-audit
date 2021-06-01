@@ -27,6 +27,9 @@
 #include "pgsql_inc.h"
 #include "audit_event.h"
 
+#include <vector>
+#include <string>
+
 #define AUDIT_PROTOCOL_VERSION "1.0"
 
 /*
@@ -51,6 +54,11 @@ public:
 	virtual void close() = 0;
 };
 
+struct ProcError {
+	int sqlerrcode;       /* encoded ERRSTATE */
+	std::string message;  /* primary error message (translated) */
+};
+
 struct PostgreSQL_proc {
 	pid_t	pid;
 	const char *db_name;
@@ -62,9 +70,12 @@ struct PostgreSQL_proc {
 	const char *appname;
 	unsigned int query_id;
 	bool connected;
+	bool initialized;
+	int auth_status;
+	std::vector<ProcError> error_list;
 
 	PostgreSQL_proc()
-		: pid(getpid()),
+		: pid(),
 		db_name(""),
 		user(""),
 		priv_user(""),
@@ -73,7 +84,9 @@ struct PostgreSQL_proc {
 		os_user(""),
 		appname(""),
 		query_id(0),
-		connected(false)
+		connected(false),
+		initialized(),
+		auth_status()
 	{
 	}
 };
@@ -91,7 +104,7 @@ public:
 	 *
 	 * @return -1 on a failure
 	 */
-	virtual ssize_t event_format(PostgreSQL_proc * proc, AuditEventStackItem *pItem, IWriter *writer) = 0;
+	virtual ssize_t event_format(const PostgreSQL_proc *proc, AuditEventStackItem *pItem, IWriter *writer) = 0;
 
 	/**
 	 * Format a message when handler is started
@@ -110,7 +123,7 @@ public:
 	 * Format a generic message
 	 * @return -1 on a failure
 	 */
-	virtual ssize_t command_format(PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer) = 0;
+	virtual ssize_t command_format(const PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer) = 0;
 };
 
 
@@ -141,9 +154,9 @@ public:
 		}
 	}
 
-	virtual ssize_t event_format(PostgreSQL_proc * proc, AuditEventStackItem *pItem, IWriter *writer);
+	virtual ssize_t event_format(const PostgreSQL_proc *proc, AuditEventStackItem *pItem, IWriter *writer);
 	virtual ssize_t start_msg_format(IWriter *writer);
-	virtual ssize_t command_format(PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer);
+	virtual ssize_t command_format(const PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer);
 
 	/**
 	 * Utility method used to compile a regex program.
@@ -228,12 +241,13 @@ public:
 	 */
 	static void stop_all();
 
-	Audit_handler() :
+	Audit_handler(const PostgreSQL_proc& proc) :
 		m_initialized(false),
 		m_enabled(false),
 		m_formatter(NULL),
 		m_failed(false),
 		m_log_io_errors(true),
+		m_proc(proc),
 		m_handler_type("unknown")
 	{
 	}
@@ -249,10 +263,9 @@ public:
 	 * destruction of this object)
 	 * @return 0 on success
 	 */
-	int init(Audit_formatter *formatter, PostgreSQL_proc *proc)
+	int init(Audit_formatter *formatter)
 	{
 		m_formatter = formatter;
-		m_proc = *proc;
 		if (m_initialized)
 		{
 			// elog(LOG, "pid = %d, %s Audit_handler::init - initialized!", getpid(), m_handler_type);
@@ -304,7 +317,6 @@ public:
 	/**
 	 * Allow updating the proc info.
 	 */
-	void set_proc(const PostgreSQL_proc& proc) { m_proc = proc; }
 
 protected:
 	virtual void handler_start();
@@ -320,7 +332,7 @@ protected:
 	bool m_failed;
 	bool m_log_io_errors;
 	time_t m_last_retry_sec_ts;
-	PostgreSQL_proc m_proc;
+	const PostgreSQL_proc& m_proc;
 
 	inline void set_failed()
 	{
@@ -353,8 +365,8 @@ private:
  */
 class Audit_io_handler: public Audit_handler, public IWriter {
 public:
-	Audit_io_handler()
-		: m_io_dest(NULL), m_io_type(NULL)
+	Audit_io_handler(const PostgreSQL_proc& proc)
+		: Audit_handler(proc), m_io_dest(NULL), m_io_type(NULL)
 	{
 		set_handler_type("io");
 	}
@@ -389,8 +401,8 @@ protected:
 class Audit_file_handler: public Audit_io_handler {
 public:
 
-	Audit_file_handler() :
-		m_sync_period(0), m_bufsize(0), m_log_file(NULL), m_sync_counter(0)
+	Audit_file_handler(const PostgreSQL_proc& proc) :
+		Audit_io_handler(proc) ,m_sync_period(0), m_bufsize(0), m_log_file(NULL), m_sync_counter(0)
 	{
 		m_io_type = "file";
 		set_handler_type("file");
@@ -440,8 +452,8 @@ protected:
 class Audit_unix_socket_handler: public Audit_io_handler {
 public:
 
-	Audit_unix_socket_handler() :
-		m_connect_timeout(1), m_fd(-1)
+	Audit_unix_socket_handler(const PostgreSQL_proc& proc) :
+		Audit_io_handler(proc) ,m_connect_timeout(1), m_fd(-1)
 	{
 		m_io_type = "socket";
 		set_handler_type("socket");

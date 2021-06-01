@@ -76,8 +76,6 @@ void Audit_io_handler::log_connect()
 		return;
 	}
 
-	m_proc.connected = true;
-
 	m_formatter->command_format(& m_proc, "Connect", "Connect", this);
 }
 
@@ -94,14 +92,11 @@ void Audit_io_handler::log_disconnect()
 		{
 			AUDIT_DEBUG_LOG("audit failed login event, user [%s]", m_proc.user);
 			m_formatter->command_format(& m_proc, "Failed Login", "Failed Login", this);
-			m_proc = PostgreSQL_proc();	// clear it out, AFTER any final logging
 			return;
 		}
 	}
 
 	m_formatter->command_format(& m_proc, "Quit", "Quit", this);
-
-	m_proc = PostgreSQL_proc();	// clear it out, AFTER any final logging
 }
 
 
@@ -559,7 +554,7 @@ ssize_t Audit_json_formatter::start_msg_format(IWriter *writer)
 	yajl_add_uint64(gen, "date", ts);
 
 	// plugin version info
-	yajl_add_string_val(gen, "audit-version", POSTGRESQL_AUDIT_PLUGIN_VERSION"-"POSTGRESQL_AUDIT_PLUGIN_REVISION);
+	yajl_add_string_val(gen, "audit-version", POSTGRESQL_AUDIT_PLUGIN_VERSION "-" POSTGRESQL_AUDIT_PLUGIN_REVISION);
 	yajl_add_string_val(gen, "audit-protocol-version", AUDIT_PROTOCOL_VERSION);
 
 	// hostname running PostgreSQL
@@ -760,7 +755,7 @@ static const char *get_database_name()
 	return db_name;
 }
 
-ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStackItem *pItem, IWriter *writer)
+ssize_t Audit_json_formatter::event_format(const PostgreSQL_proc *proc, AuditEventStackItem *pItem, IWriter *writer)
 {
 	// initialize yajl
 	yajl_gen gen = yajl_gen_alloc(NULL);
@@ -770,7 +765,7 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 	yajl_add_uint64(gen, "date", ts);
 
 	yajl_add_uint64(gen, "thread-id", proc->pid);
-	yajl_add_uint64(gen, "query-id", ++proc->query_id);
+	yajl_add_uint64(gen, "query-id", proc->query_id);
 
 	yajl_add_string_val(gen, "user", proc->user);
 	yajl_add_string_val(gen, "priv_user", proc->priv_user);
@@ -782,6 +777,23 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 
 	const char *cmd = pItem->auditEvent.command;
 	yajl_add_string_val(gen, "cmd", cmd);
+
+	yajl_add_string(gen, "error_list");
+	yajl_gen_array_open(gen);
+	const ListCell* errorList = list_head(pItem->auditEvent.errorList);
+	while (errorList) {
+		const AuditError* error = (const AuditError*)lfirst(errorList);
+		yajl_gen_map_open(gen);
+		yajl_add_string_val(gen, "sqlstate", unpack_sql_state(error->sqlerrcode));  // unpack the alphanumeric SQLSTATE
+		yajl_add_string_val(gen, "message", error->message);
+		yajl_gen_map_close(gen);
+#if PG_VERSION_NUM >= 130000
+		errorList = lnext(pItem->auditEvent.errorList, errorList);
+#else
+		errorList = lnext(errorList);
+#endif
+	}
+	yajl_gen_array_close(gen);
 
 	const char *db_name = get_database_name();
 
@@ -942,7 +954,7 @@ ssize_t Audit_json_formatter::event_format(PostgreSQL_proc *proc, AuditEventStac
 }
 
 // centralize YAJL handling
-ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer)
+ssize_t Audit_json_formatter::command_format(const PostgreSQL_proc *proc, const char *command, const char *query, IWriter *writer)
 {
 	yajl_gen gen = yajl_gen_alloc(NULL);
 	yajl_gen_map_open(gen);
@@ -951,7 +963,7 @@ ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *
 	yajl_add_uint64(gen, "date", ts);
 
 	yajl_add_uint64(gen, "thread-id", proc->pid);
-	yajl_add_uint64(gen, "query-id", ++proc->query_id);
+	yajl_add_uint64(gen, "query-id", proc->query_id);
 
 	yajl_add_string_val(gen, "user", proc->user);
 	yajl_add_string_val(gen, "priv_user", proc->priv_user);
@@ -963,6 +975,17 @@ ssize_t Audit_json_formatter::command_format(PostgreSQL_proc *proc, const char *
 
 	yajl_add_string_val(gen, "cmd", command);
 	yajl_add_string_val(gen, "query", query);
+
+	yajl_add_string(gen, "error_list");
+	yajl_gen_array_open(gen);
+	for (size_t i = 0; i < proc->error_list.size(); i++) {
+		const ProcError& error = proc->error_list[i];
+		yajl_gen_map_open(gen);
+		yajl_add_string_val(gen, "sqlstate", unpack_sql_state(error.sqlerrcode));  // unpack the alphanumeric SQLSTATE
+		yajl_add_string_val(gen, "message", error.message.c_str());
+		yajl_gen_map_close(gen);
+	}
+	yajl_gen_array_close(gen);
 
 	ssize_t res = -2;
 	yajl_gen_status stat = yajl_gen_map_close(gen); // close the object

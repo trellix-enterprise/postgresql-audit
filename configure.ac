@@ -17,10 +17,10 @@ AC_DEFUN([CHECK_DEBUG], [
 
 	if test "$enable_debug" = "yes"
 	then
-		CPPFLAGS="$CPPFLAGS -g -D_DEBUG"
+		CPPFLAGS="$CPPFLAGS -DENABLE_NLS -g -D_DEBUG"
 		AC_MSG_RESULT([yes])
 	else
-		CPPFLAGS="$CPPFLAGS -g -O2"
+		CPPFLAGS="$CPPFLAGS -DENABLE_NLS -g -O2"
 		AC_MSG_RESULT([no])
 	fi
 

@@ -67,10 +67,11 @@ static const char *commandTagToString(const char *cmdTag);
 #endif
 
 // Various variables
+static PostgreSQL_proc g_proc;
 
 // Possible audit handlers
-static Audit_file_handler json_file_handler;
-static Audit_unix_socket_handler json_unix_socket_handler;
+static Audit_file_handler json_file_handler(g_proc);
+static Audit_unix_socket_handler json_unix_socket_handler(g_proc);
 
 // formatters
 static Audit_json_formatter json_formatter;
@@ -486,11 +487,11 @@ stack_free(void *stackFree)
 		/* Check if this item matches the item to be freed */
 		if (nextItem == (AuditEventStackItem *) stackFree)
 		{
-			AUDIT_DEBUG_LOG("found requested freed item in stack, id: [%d]", nextItem->stackId);
+			AUDIT_DEBUG_LOG("found requested freed item in stack, id: [%zd]", nextItem->stackId);
 
 			--stackTotal;
 
-			AUDIT_DEBUG_LOG("stackTotal: [%d]", stackTotal);
+			AUDIT_DEBUG_LOG("stackTotal: [%zd]", stackTotal);
 
 			/* Move top of stack to the item after the freed item */
 			auditEventStack = nextItem->next;
@@ -569,7 +570,7 @@ stack_push()
 	stackItem->contextAudit = contextAudit;
 	stackItem->stackId = ++stackTotal;
 	++Counter;
-	AUDIT_DEBUG_LOG("generated stack item Id: %d, counter: [%d]", stackItem->stackId, Counter);
+	AUDIT_DEBUG_LOG("generated stack item Id: %zd, counter: [%zd]", stackItem->stackId, Counter);
 
 #if PG_VERSION_NUM >= 90500
 	/*
@@ -607,7 +608,7 @@ stack_push()
 static void
 stack_pop(int64 stackId)
 {
-	AUDIT_DEBUG_LOG("stack_pop, stackId: %d", stackId);
+	AUDIT_DEBUG_LOG("stack_pop, stackId: %zd", stackId);
 
 	/* Make sure what we want to delete is at the top of the stack */
 	if (auditEventStack != NULL && auditEventStack->stackId == stackId)
@@ -629,7 +630,7 @@ stack_pop(int64 stackId)
 static void
 stack_valid(int64 stackId)
 {
-	AUDIT_DEBUG_LOG("stack_valid, stackId: %d", stackId);
+	AUDIT_DEBUG_LOG("stack_valid, stackId: %zd", stackId);
 
 	AuditEventStackItem *nextItem = auditEventStack;
 
@@ -951,6 +952,7 @@ log_audit_event(AuditEventStackItem *stackItem)
 	// log data to file and/or socket
 	if (! skip)
 	{
+		g_proc.query_id++;
 		Audit_handler::log_audit_all(stackItem);
 	}
 
@@ -1536,13 +1538,14 @@ static bool initHandlers(Port *port, PostgreSQL_proc *proc)
 	AUDIT_DEBUG_LOG("initHandlers");
 
 	// store minimal information early in order to be able to log failed login message
+	proc->pid = getpid();
 	if (port)
 	{
 		proc->db_name = port->database_name;
 		proc->user = port->user_name;
 	}
 
-	int res = json_file_handler.init(&json_formatter, proc);
+	int res = json_file_handler.init(&json_formatter);
 	if (res != 0)
 	{
 		// best guess at error code
@@ -1550,7 +1553,7 @@ static bool initHandlers(Port *port, PostgreSQL_proc *proc)
 		return false;
 	}
 
-	res = json_unix_socket_handler.init(&json_formatter, proc);
+	res = json_unix_socket_handler.init(&json_formatter);
 	if (res != 0)
 	{
 		AUDIT_ERROR_LOG("unable to init json socket handler. res: %d. Aborting.", res);
@@ -1572,9 +1575,7 @@ audit_ClientAuthentication_hook(Port *port, int status)
 {
 	AUDIT_DEBUG_LOG("audit_ClientAuthentication_hook");
 
-	PostgreSQL_proc proc;
-
-	if (! initHandlers(port, &proc))
+	if (! initHandlers(port, &g_proc))
 	{
 		AUDIT_ERROR_LOG("initHandlers failed");
 	}
@@ -1586,12 +1587,7 @@ audit_ClientAuthentication_hook(Port *port, int status)
 		(*next_ClientAuthentication_hook)(port, status);
 	}
 
-	updateProc(& proc, port);
-
-	// update the stored info
-	json_file_handler.set_proc(proc);
-	json_unix_socket_handler.set_proc(proc);
-
+	updateProc(&g_proc, port);
 
 	// Audit_handler::m_audit_handler_list elements were already inited by _PG_init, we don't need to redo that.
 
@@ -1604,6 +1600,8 @@ audit_ClientAuthentication_hook(Port *port, int status)
 	// forked, not just those serving clients, which is not at all what we want.
 	json_file_handler.set_enable(json_file_handler_enable);
 	json_unix_socket_handler.set_enable(json_unix_socket_handler_enable);
+	g_proc.initialized = true;
+	g_proc.auth_status = status;
 
 	// Looks like we need to check the user ourselves to get the failed login event.
 	Oid role = get_role_oid(port->user_name, true);
@@ -1620,8 +1618,12 @@ audit_ClientAuthentication_hook(Port *port, int status)
 		// log connection - set up info in each handler
 		// this sets proc.m_connected to true in each handler's
 		// PostgreSQL_proc member.
+		g_proc.connected = true;
+		g_proc.query_id++;
 		Audit_handler::log_audit_connect();
 	}
+
+	AUDIT_DEBUG_LOG("audit_ClientAuthentication_hook: status[%d]", status);
 }
 
 /*
@@ -2768,34 +2770,46 @@ audit_ExecutorEnd_hook(QueryDesc *queryDesc)
 static void
 audit_emit_log_hook(ErrorData *edata)
 {
-	//	printf("%s\n", "audit_emit_log_hook");
-
-	if (edata == NULL || edata->filename == NULL)
+	if (edata == NULL || internalStatement || edata->elevel < WARNING)
 	{
-		return;
-	}
-
-	if (internalStatement)
-	{
+		if (next_emit_log_hook)
+			(*next_emit_log_hook)(edata);
 		return;
 	}
 
 	/*
-	 * In order to identify errors which represents invalid statements, verify the following:
-	 * 		1. error level == ERROR
-	 * 		2. filename like 'parse*' or 'scan*' (globs of filenames in src/backend/parser directory)
-	 * 		3. debug_query_string != NULL (this global varibale holds current statement)
+	 * - auditEventStack exists
+	 * - an error during execution of a valid query
 	 */
-	if ( ( edata->elevel == ERROR) 										&&
-			( (strstr(edata->filename,"parse_") == edata->filename) ||
-			  (strstr(edata->filename,"scan") == edata->filename) )  &&
-			debug_query_string	)
+	if (auditEventStack)
 	{
-		// printf("%s\n", "invalid syntax");
+		AuditError* error = (AuditError*)palloc(sizeof(*error));
+		error->sqlerrcode = edata->sqlerrcode;
+		error->message = edata->message;
+		auditEventStack->auditEvent.errorList = lappend(auditEventStack->auditEvent.errorList, error);
+
+		// logging an ERROR is throwig an exception
+		// the query will not be processed futher and no further hooks will be called
+		// the event needs to be generated here
+		if (edata->elevel >= ERROR)
+			log_audit_event(auditEventStack);
+	}
+
+	/*
+	 * - auditEventStack does not exist
+	 * - debug_query_string exists
+	 * - there is a query, but there was an error already before the query started executing
+	 */
+	else if (debug_query_string)
+	{
+		AuditError* error = (AuditError*)palloc(sizeof(*error));
+		error->sqlerrcode = edata->sqlerrcode;
+		error->message = strdup(edata->message);
 
 		AuditEventStackItem *stackItem = NULL;
 
 		stackItem = stack_push();
+		stackItem->auditEvent.errorList = lappend(stackItem->auditEvent.errorList, error);
 
 		// Default values
 		stackItem->auditEvent.logStmtLevel = LOGSTMT_ALL;
@@ -2808,44 +2822,31 @@ audit_emit_log_hook(ErrorData *edata)
 		stackItem->auditEvent.commandText = debug_query_string;
 
 		log_audit_event(stackItem);
-
 	}
+
 	/*
-	 *	Audit additional error messages
-	 *	for now, only for log level ERROR
-	 *	make sure not causing alert duplication (like, for FAILED LOGINS which audit in other function)
-	 *	in case stack is not empty it means we didnt audit this event yet
-	 *
+	 * - auditEventStack does not exist
+	 * - debug_query_string does not exist
+	 * - an error in the session itself
 	 */
-	else if (edata->elevel == ERROR && auditEventStack != NULL)
+	else
 	{
-		//		printf("%s\n", "failed during execution");
-		log_audit_event(auditEventStack);
-	}
-	/*
-	 * Audit failed login
-	 * which didnt trigger audit_ClientAuthentication_hook
-	 */
-	else if ( edata->elevel     == FATAL 										  &&
-			edata->sqlerrcode == ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION    &&
-			(    strcmp(edata->filename,"auth.c")       == 0
-			     || strcmp(edata->filename,"postmaster.c") == 0
-			     || strcmp(edata->filename,"miscinit.c")   == 0 ))
-	{
-		//		printf("%s\n", "failed login, not trigger audit_ClientAuthentication_hook");
+		const ProcError error = {
+			edata->sqlerrcode
+			,edata->message
+		};
+		g_proc.error_list.push_back(error);
 
-		PostgreSQL_proc proc;
-
-		initHandlers(MyProcPort, &proc);
-
-		// update the stored info
-		json_file_handler.set_proc(proc);
-		json_unix_socket_handler.set_proc(proc);
-		// enable handlers
-		json_file_handler.set_enable(json_file_handler_enable);
-		json_unix_socket_handler.set_enable(json_unix_socket_handler_enable);
-
-		// Done with configuration, the actual logging will be done by run_at_exit()
+		// ensure sensor event if auth hook got bypased
+		const int cat = ERRCODE_TO_CATEGORY(edata->sqlerrcode);
+		if (!g_proc.initialized && cat == ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION) {
+			initHandlers(MyProcPort, &g_proc);
+			updateProc(&g_proc, MyProcPort);
+			g_proc.initialized = true;
+			json_file_handler.set_enable(json_file_handler_enable);
+			json_unix_socket_handler.set_enable(json_unix_socket_handler_enable);
+			// Done with configuration, the actual logging will be done by run_at_exit()
+		}
 	}
 
 	// clean-up
@@ -3185,6 +3186,74 @@ void remove_version_file()
 	}
 }
 
+static ProcError synthesize_failed_login(const Port *port)
+{
+	const char *errstr;
+	int errcode_return = ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION;
+
+	switch (port->hba->auth_method) {
+	case uaReject:
+	case uaImplicitReject:
+		errstr = gettext_noop("authentication failed for user \"%s\": host rejected");
+		break;
+	case uaTrust:
+		errstr = gettext_noop("\"trust\" authentication failed for user \"%s\"");
+		break;
+	case uaIdent:
+		errstr = gettext_noop("Ident authentication failed for user \"%s\"");
+		break;
+	case uaPeer:
+		errstr = gettext_noop("Peer authentication failed for user \"%s\"");
+		break;
+	case uaPassword:
+	case uaMD5:
+#if PG_VERSION_NUM >= 100000
+	case uaSCRAM:
+#endif
+		errstr = gettext_noop("password authentication failed for user \"%s\"");
+		/* We use it to indicate if a .pgpass password failed. */
+		errcode_return = ERRCODE_INVALID_PASSWORD;
+		break;
+	case uaGSS:
+		errstr = gettext_noop("GSSAPI authentication failed for user \"%s\"");
+		break;
+	case uaSSPI:
+		errstr = gettext_noop("SSPI authentication failed for user \"%s\"");
+		break;
+	case uaPAM:
+		errstr = gettext_noop("PAM authentication failed for user \"%s\"");
+		break;
+#if PG_VERSION_NUM >= 90600
+	case uaBSD:
+		errstr = gettext_noop("BSD authentication failed for user \"%s\"");
+		break;
+#endif
+	case uaLDAP:
+		errstr = gettext_noop("LDAP authentication failed for user \"%s\"");
+		break;
+	case uaCert:
+		errstr = gettext_noop("certificate authentication failed for user \"%s\"");
+		break;
+	case uaRADIUS:
+		errstr = gettext_noop("RADIUS authentication failed for user \"%s\"");
+		break;
+	default:
+		errstr = gettext_noop("authentication failed for user \"%s\": invalid authentication method");
+		break;
+	}
+
+	char* error_message = NULL;
+	const int res = asprintf(&error_message, errstr, port->user_name);
+	if (res == -1)
+		error_message = NULL;
+
+	const ProcError error = {errcode_return, error_message ? error_message : "<not enough memory to generate error message>"};
+	free(error_message);
+
+	return error;
+}
+
+
 /* Module initialization */
 
 /*
@@ -3197,8 +3266,15 @@ run_at_exit(void)
 {
 	AUDIT_DEBUG_LOG("%d run_at_exit running", getpid());
 
+	// libpq goes to stright exit on STATUS_EOF, without logging the error.
+	// Regenerate the error code here.
+	if (g_proc.auth_status == STATUS_EOF && !g_proc.connected && g_proc.user[0] && g_proc.error_list.empty())
+		g_proc.error_list.push_back(synthesize_failed_login(MyProcPort));
+
 	// log disconnect here
+	g_proc.query_id++;
 	Audit_handler::log_audit_disconnect();
+	g_proc = PostgreSQL_proc();  // clear it out, AFTER any final logging
 
 	// release allocated memory (allocated directly by malloc/strdup
 	// and not part of PG MemoryContext)
@@ -3227,6 +3303,14 @@ run_at_exit(void)
 void
 _PG_init(void)
 {
+	if (log_min_messages > WARNING) {
+		const char* old_min_name = "???";
+		if (log_min_messages == FATAL) old_min_name = "FATAL";
+		if (log_min_messages == PANIC) old_min_name = "PANIC";
+		if (log_min_messages == ERROR) old_min_name = "ERROR";
+		log_min_messages = WARNING;
+		AUDIT_DEBUG_LOG("Lowering log_min_messages from [%s] to [WARNING] as required by error code collection.", old_min_name);
+	}
 	/* Must be loaded with shared_preload_libaries */
 	if (IsUnderPostmaster)
 	{
@@ -3240,8 +3324,7 @@ _PG_init(void)
 	// init the handlers
 	json_formatter.m_perform_password_masking = check_do_password_masking;
 
-	PostgreSQL_proc proc;
-	int res = json_file_handler.init(&json_formatter, & proc);
+	int res = json_file_handler.init(&json_formatter);
 	if (res != 0)
 	{
 		// best guess at error code
@@ -3250,7 +3333,7 @@ _PG_init(void)
 				"%s unable to init json file handler. res: %d. Aborting.",
 				AUDIT_LOG_PREFIX, res)));
 	}
-	res = json_unix_socket_handler.init(&json_formatter, & proc);
+	res = json_unix_socket_handler.init(&json_formatter);
 	if (res != 0)
 	{
 		// best guess at error code
