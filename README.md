@@ -1,4 +1,7 @@
 # postgresql-audit
+
+
+## Overview
 Audit plugin for PostgreSQL<sup>*</sup> database.
 
 A PostgreSQL plugin from McAfee providing audit capabilities for the Open Source releases
@@ -6,18 +9,20 @@ of PostgreSQL, designed with an emphasis on security and audit requirements. The
 as a standalone audit solution or configured to feed data to external monitoring tools.
 
 
-Installation and Configuration
-------------------------------
+## Documentation
+Please check out our wiki on GitHub. <br/>
+https://github.com/mcafee/postgresql-audit/wiki
 
+
+## Installation / Configuration
 Official McAfee plugin binary releases can be downloaded from the Releases page on GitHub: <br/>
 https://github.com/mcafee/postgresql-audit/releases
 
 Please refer to the wiki on GitHub for detailed installation and configuration instructions: <br/>
 https://github.com/mcafee/postgresql-audit/wiki
 
-Issues
-------------------------------
 
+## Feedback / Bug Reporting
 Found a bug? Got a feature request or question?
 
 Please feel free to report to: https://github.com/mcafee/postgresql-audit/issues
@@ -37,13 +42,11 @@ using the command
 
      show log_destination;
 
-Source Code
--------------------------------
+## Source Code
 Source code is available at: https://github.com/mcafee/postgresql-audit
 
 
-License
--------------------------------
+## License
 Copyright (C) 2016-2021 McAfee, LLC.
 
 This program is free software; you can redistribute it and/or modify it under the terms of the GNU
