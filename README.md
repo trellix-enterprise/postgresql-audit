@@ -25,22 +25,8 @@ https://github.com/mcafee/postgresql-audit/wiki
 ## Feedback / Bug Reporting
 Found a bug? Got a feature request or question?
 
-Please feel free to report to: https://github.com/mcafee/postgresql-audit/issues
+Check out the [CONTRIBUTING.md](https://github.com/mcafee/postgresql-audit/blob/master/CONTRIBUTING.md) to see how you can get involved.
 
-If reporting a bug, please describe the problem verbosely. Try to see if it reproduces and
-include a detailed description on how to reproduce.
-
-Make sure to include your PostgreSQL Server version and Audit Plugin version.
-To print PostgreSQL Server version: log into PostgreSQL and execute the command:
-
-    select version();
-
-Please include with the bug thePostgreSSQL error log.
-Log file location is configured in the postgresql.conf configuration
-file.  You can see the log destination (syslog, a file or something else)
-using the command
-
-     show log_destination;
 
 ## Source Code
 Source code is available at: https://github.com/mcafee/postgresql-audit
