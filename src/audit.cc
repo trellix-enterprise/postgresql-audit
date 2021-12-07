@@ -882,7 +882,19 @@ log_audit_event(AuditEventStackItem *stackItem)
 		for (paramIdx = 0; paramList != NULL && paramIdx < numParams;
 				paramIdx++)
 		{
-			ParamExternData *prm = &paramList->params[paramIdx];
+			ParamExternData *prm;
+			ParamExternData workspace;
+			if (paramList->paramFetch != NULL) {
+#if PG_VERSION_NUM >= 110000
+				prm = paramList->paramFetch(paramList, paramIdx + 1, false, &workspace);
+#else
+				paramList->paramFetch(paramList, paramIdx + 1);
+				prm = &paramList->params[paramIdx];
+#endif
+			} else {
+				prm = &paramList->params[paramIdx];
+			}
+
 			Oid typeOutput;
 			bool typeIsVarLena;
 			char *paramStr;
@@ -3305,6 +3317,7 @@ _PG_init(void)
 {
 	if (log_min_messages > WARNING) {
 		const char* old_min_name = "???";
+		(void)old_min_name;
 		if (log_min_messages == FATAL) old_min_name = "FATAL";
 		if (log_min_messages == PANIC) old_min_name = "PANIC";
 		if (log_min_messages == ERROR) old_min_name = "ERROR";

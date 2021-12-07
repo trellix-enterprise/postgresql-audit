@@ -1,61 +1,21 @@
 This is a list of third party software that may be included with this product.
+%% The following software may be included in this product:
+===============================
+pgaudit                 https://github.com/pgaudit/pgaudit
+===============================
+(formerly known as Postgres, then as Postgres95)
 
-%% The following software may be included in this product: pgaudit
-From https://github.com/pgaudit/pgaudit. Their copyright statement is
+Portions Copyright (c) 1996-2002, The PostgreSQL Global Development Group
 
-	This code is released under the PostgreSQL licence, as given at
-	http://www.postgresql.org/about/licence/
-	Copyright is novated to the PostgreSQL Global Development Group.
+Portions Copyright (c) 1994, The Regents of the University of California
+Permission to use, copy, modify, and distribute this software and its documentation for any purpose, without fee, and without a written agreement is hereby granted, provided that the above copyright notice and this paragraph and the following two paragraphs appear in all copies.
 
-%% The following software may be included in this product: static_assert.h
-From http://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement
-Uses Creative Commons Attribution ShareAlike 3.0 unported license,
-https://creativecommons.org/licenses/by-sa/3.0/.  From the answer:
-"CC-BY-SA 3.0 from stackoverflow.com/a/809465/68204"
+IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE UNIVERSITY OF CALIFORNIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-%% The following software may be include in this product: Get IP address of remote end using getpeername.
-From http://beej.us/guide/bgnet/output/html/multipage/getpeernameman.html
-C code from that site is in the public domain. See:
-http://beej.us/guide/bgnet/output/html/multipage/intro.html#copyright
-
-%% The following software may be included in this product: YAJL 1.0 (http://lloyd.github.com/yajl/)
-
-Use of any of this software is governed by the terms of the license below:
-
-Copyright 2010, Lloyd Hilaiel.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
- 1. Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-
- 2. Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in
-    the documentation and/or other materials provided with the
-    distribution.
-
- 3. Neither the name of Lloyd Hilaiel nor the names of its
-    contributors may be used to endorse or promote products derived
-    from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
-
-%% The following software may be included in this product: PCRE (http://www.pcre.org/)
-
-Use of any of this software is governed by the terms of the license below:
-
+THE UNIVERSITY OF CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS
+===============================
+PCRE                    https://sourceforge.net/projects/pcre/
+===============================
 PCRE LICENCE
 ------------
 
@@ -64,7 +24,8 @@ and semantics are as close as possible to those of the Perl 5 language.
 
 Release 8 of PCRE is distributed under the terms of the "BSD" licence, as
 specified below. The documentation for PCRE, supplied in the "doc"
-directory, is distributed under the same terms as the software itself.
+directory, is distributed under the same terms as the software itself. The data
+in the testdata directory is not copyrighted and is in the public domain.
 
 The basic library functions are written in C and are freestanding. Also
 included in the distribution is a set of C++ wrapper functions, and a
@@ -82,7 +43,7 @@ Email domain:     cam.ac.uk
 University of Cambridge Computing Service,
 Cambridge, England.
 
-Copyright (c) 1997-2014 University of Cambridge
+Copyright (c) 1997-2016 University of Cambridge
 All rights reserved.
 
 
@@ -93,7 +54,7 @@ Written by:       Zoltan Herczeg
 Email local part: hzmester
 Emain domain:     freemail.hu
 
-Copyright(c) 2010-2014 Zoltan Herczeg
+Copyright(c) 2010-2016 Zoltan Herczeg
 All rights reserved.
 
 
@@ -104,7 +65,7 @@ Written by:       Zoltan Herczeg
 Email local part: hzmester
 Emain domain:     freemail.hu
 
-Copyright(c) 2009-2014 Zoltan Herczeg
+Copyright(c) 2009-2016 Zoltan Herczeg
 All rights reserved.
 
 
@@ -148,3 +109,21 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 End
+
+===============================
+yajl                    https://github.com/lloyd/yajl
+===============================
+Copyright (c) 2007-2011, Lloyd Hilaiel <lloyd@hilaiel.com>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
