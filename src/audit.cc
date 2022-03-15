@@ -2146,7 +2146,11 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 	case T_CreateTableAsStmt:
 		createTableAs = (CreateTableAsStmt *) parsetree;
 
+#if PG_VERSION_NUM >= 140000
+		if (createTableAs->objtype == OBJECT_MATVIEW)
+#else
 		if (createTableAs->relkind == OBJECT_MATVIEW)
+#endif
 		{
 			// we cannot pull out the accessed object here
 			// but at least we can change the command
@@ -2340,7 +2344,11 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
 
 	case T_AlterTableStmt:
 		event->objectName = getFullObjectName(((AlterTableStmt *) parsetree)->relation);
+#if PG_VERSION_NUM >= 140000
+		event->objectType = objectTypeToString(((AlterTableStmt *) parsetree)->objtype);
+#else
 		event->objectType = objectTypeToString(((AlterTableStmt *) parsetree)->relkind);
+#endif
 		break;
 
 	// These statement use lists of objects, the names will be formatted when logged
@@ -2549,23 +2557,26 @@ static void updateAccessedObjectInfo(struct AuditEvent *event, const Node *parse
  * Hook ProcessUtility to do session auditing for DDL and utility commands.
  */
 static void
-audit_ProcessUtility_hook(   
+audit_ProcessUtility_hook(
 #if PG_VERSION_NUM >= 100001
-                             PlannedStmt *pstmt,
+							PlannedStmt *pstmt,
 #else
-                             Node *parsetree,
+							Node *parsetree,
 #endif
-                             const char *queryString,
-                             ProcessUtilityContext context,
-                             ParamListInfo params,
+							const char *queryString,
+#if PG_VERSION_NUM >= 140000
+							bool readOnlyTree,
+#endif
+							ProcessUtilityContext context,
+							ParamListInfo params,
 #if PG_VERSION_NUM >= 100001
-							 QueryEnvironment *queryEnv,
+							QueryEnvironment *queryEnv,
 #endif
-                             DestReceiver *dest,
+							DestReceiver *dest,
 #if PG_VERSION_NUM >= 130000
-                             QueryCompletion *queryCompletion)
+							QueryCompletion *queryCompletion)
 #else
-                             char *completionTag)
+							char *completionTag)
 #endif
 {
 	AUDIT_DEBUG_LOG("audit_ProcessUtility_hook");
@@ -2623,7 +2634,22 @@ audit_ProcessUtility_hook(
 	}
 
 	/* Call the standard process utility chain. */
-#if PG_VERSION_NUM >= 130000
+#if PG_VERSION_NUM >= 140000
+	if (next_ProcessUtility_hook)
+	{
+				// Third parameter
+				// readOnlyTree: if true, pstmt's node tree must not be modified
+		(*next_ProcessUtility_hook) (pstmt, queryString, false, context,
+				params, queryEnv, dest, queryCompletion);
+	}
+	else
+	{
+				// Third parameter
+				// readOnlyTree: if true, pstmt's node tree must not be modified
+		standard_ProcessUtility(pstmt, queryString, false, context,
+				params, queryEnv, dest, queryCompletion);
+	}
+#elif PG_VERSION_NUM < 140000 && PG_VERSION_NUM >= 130000
 	if (next_ProcessUtility_hook)
 	{
 		(*next_ProcessUtility_hook) (pstmt, queryString, context,
