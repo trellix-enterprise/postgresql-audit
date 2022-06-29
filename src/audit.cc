@@ -1,7 +1,7 @@
 /*
- * Intel Security Auditing Plugin for PostgreSQL.
+ * Trellix Auditing Plugin for PostgreSQL.
  *
- * Copyright (C) 2016, Intel, Inc.
+ * Copyright © 2022 Musarubra US LLC
  *
  * This program is free software; you can redistribute it and/or modify it under the terms of the GNU 
  * General Public License as published by the Free Software Foundation; version 2 of the License.
@@ -15,7 +15,7 @@
  * Liberal use made of code from pgaudit plugin:
  * git://github.com/pgaudit/pgaudit
  *
- * Similarly liberal use made of code from McAfee mysql_audit plugin:
+ * Similarly liberal use made of code from Trellix mysql_audit plugin:
  * git://github.com/mcafee/mysql-audit
  *
  *------------------------------------------------------------------------------
@@ -2613,11 +2613,9 @@ audit_ProcessUtility_hook(
 			}
 
 		stackId = stackItem->stackId;
-#ifndef EDB_ENTERPRISE
+
 		stackItem->auditEvent.logStmtLevel = GetCommandLogLevel(parsetree);
-#else // Build "EDB Postgres Enterprise" variant
-		stackItem->auditEvent.logStmtLevel = LOGSTMT_NONE; // Prevent unnecessary logic activation in log_audit_event()
-#endif
+
 		stackItem->auditEvent.commandTag = nodeTag(parsetree);
 		stackItem->auditEvent.command = commandTagToString(CreateCommandTag(parsetree));
 		stackItem->auditEvent.commandText = queryString;
@@ -2967,11 +2965,8 @@ pgaudit_ddl_command_end(PG_FUNCTION_ARGS)
 	eventData = (EventTriggerData *) fcinfo->context;
 
 	auditEventStack->auditEvent.logStmtLevel =
-#ifndef EDB_ENTERPRISE
 		GetCommandLogLevel(eventData->parsetree);
-#else // Build "EDB Postgres Enterprise" variant
-		LOGSTMT_NONE; // Prevent unnecessary logic activation in log_audit_event()
-#endif
+
 	auditEventStack->auditEvent.commandTag =
 		nodeTag(eventData->parsetree);
 	auditEventStack->auditEvent.command =
@@ -3613,7 +3608,7 @@ _PG_init(void)
 	atexit(run_at_exit);
 
 	/* Log that the extension has completed initialization */
-	ereport(LOG, (errmsg("Intel Security postgresql-audit extension initialized")));
+	ereport(LOG, (errmsg("Trellix postgresql-audit extension initialized")));
 }
 
 };

@@ -4,7 +4,7 @@
 ## Overview
 Audit plugin for PostgreSQL<sup>*</sup> database.
 
-A PostgreSQL plugin from McAfee providing audit capabilities for the Open Source releases
+A PostgreSQL plugin from Trellix providing audit capabilities for the Open Source releases
 of PostgreSQL, designed with an emphasis on security and audit requirements. The plugin may be used
 as a standalone audit solution or configured to feed data to external monitoring tools.
 
@@ -15,7 +15,7 @@ https://github.com/mcafee/postgresql-audit/wiki
 
 
 ## Installation / Configuration
-Official McAfee plugin binary releases can be downloaded from the Releases page on GitHub: <br/>
+Official Trellix plugin binary releases can be downloaded from the Releases page on GitHub: <br/>
 https://github.com/mcafee/postgresql-audit/releases
 
 Please refer to the wiki on GitHub for detailed installation and configuration instructions: <br/>

@@ -1,5 +1,5 @@
 # audit extension
-comment = 'Intel Security Group plugin that provides auditing functionality'
+comment = 'Trellix plugin that provides auditing functionality'
 default_version = '1.0'
 module_pathname = '$libdir/audit'
 relocatable = true
