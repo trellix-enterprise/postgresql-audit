@@ -16,7 +16,7 @@
  * git://github.com/pgaudit/pgaudit
  *
  * Similarly liberal use made of code from Trellix mysql_audit plugin:
- * git://github.com/mcafee/mysql-audit
+ * git:https://github.com/trellix-enterprise/mysql-audit
  *
  *------------------------------------------------------------------------------
  * pgaudit.c
@@ -33,7 +33,7 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <pwd.h>
 /* PostgreSQL includes */
 #include "pgsql_inc.h"
 
@@ -1827,10 +1827,16 @@ static const char *objectTypeToString(enum ObjectType objtype)
 	case OBJECT_MATVIEW: return "MATERIALIZED VIEW";
 	case OBJECT_EVENT_TRIGGER: return "EVENT TRIGGER";
 
-#if PG_VERSION_NUM >= 110000
-	case OBJECT_PROCEDURE: return "PROCEDURE";
-	case OBJECT_ROUTINE: return "ROUTINE";
+#if PG_VERSION_NUM >= 150000
+        case OBJECT_PARAMETER_ACL: return "PARAMETER ACL";
+        case OBJECT_PUBLICATION_NAMESPACE: return "PUBLICATION NAMESPACE";
 #endif
+
+#if PG_VERSION_NUM >= 110000
+        case OBJECT_PROCEDURE: return "PROCEDURE";
+        case OBJECT_ROUTINE: return "ROUTINE";
+#endif
+
 
 #if PG_VERSION_NUM >= 100001
 	case OBJECT_PUBLICATION: return "PUBLICATION";
@@ -2059,6 +2065,9 @@ static const char *commandTagToString(enum CommandTag cmdTag)
 	case CMDTAG_UPDATE: return "UPDATE";
 	case CMDTAG_VACUUM: return "VACUUM";
 	case COMMAND_TAG_NEXTTAG: return "";
+        #if PG_VERSION_NUM >= 150000
+               case CMDTAG_MERGE: return "MERGE";
+        #endif
 	}
 	return "???";
 }

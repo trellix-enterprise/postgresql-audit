@@ -34,7 +34,7 @@ plugin code can find them:
 5. Go to the contrib directory and clone the repo from Github:
 
 	cd contrib
-	git clone https://github.com/mcafee/postgresql-audit.git 
+	git clone https://github.trellix.com/trellix-products/DBSecPostgreSQL_AuditPlugin
 
 6. Go into the plugin directory, configure and build
 

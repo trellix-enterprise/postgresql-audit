@@ -59,6 +59,18 @@ struct ProcError {
 	std::string message;  /* primary error message (translated) */
 };
 
+#if PG_VERSION_NUM >= 150000
+typedef struct Value
+{
+	NodeTag	type;			/* tag appropriately (eg. T_String) */
+	union ValUnion
+	{
+		int	ival;		/* machine integer */
+		char	*str;		/* string */
+	}val;
+} Value;
+#endif
+
 struct PostgreSQL_proc {
 	pid_t	pid;
 	const char *db_name;

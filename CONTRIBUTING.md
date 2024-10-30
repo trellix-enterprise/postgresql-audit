@@ -7,20 +7,20 @@ Welcome, and thank you for your interest in contributing to postresql-audit!
 
 Have a question? </br> 
 We accept questions as issues on GitHub.</br>
-https://github.com/mcafee/postgresql-audit/issues
+https://github.com/trellix-enterprise/postgresql-audit/issues
 
 
 ## Providing Feedback
 
 Have some feedback? We would love to hear it!</br>
 Open an issue and let us know what you think.</br>
-https://github.com/mcafee/postgresql-audit/issues
+https://github.com/trellix-enterprise/postgresql-audit/issues
 
 
 ## Reporting Issues
 Found a bug? Got a feature request or question?
 
-Please feel free to report to: https://github.com/mcafee/postgresql-audit/issues
+Please feel free to report to: https://github.com/trellix-enterprise/postgresql-audit/issues
 
 ### Look For an Existing Issue
 
@@ -62,4 +62,4 @@ using the command
 # Thank You!
 
 Your contributions to open source, large or small, make great projects like this possible. Thank you for taking the time to contribute.
-
+https://github.com/trellix-enterprise/postgresql-audit/issues
