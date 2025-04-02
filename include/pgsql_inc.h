@@ -1,6 +1,10 @@
 extern "C" {
 #include "postgres.h"
 
+#ifndef UINT8_MAX
+#define UINT8_MAX 255
+#endif
+
 #if PG_VERSION_NUM >= 130000
 #include "tcop/cmdtag.h"
 #endif

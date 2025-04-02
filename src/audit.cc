@@ -1153,8 +1153,9 @@ audit_on_attribute(Oid relOid,
 /*
  * Create AuditEvents for SELECT/DML operations via executor permissions checks.
  */
+ #if PG_VERSION_NUM >= 160000
 static void
-log_select_dml(Oid auditOid, List *rangeTabls)
+log_select_dml(Oid auditOid, List *rangeTabls, List *permInfo)
 {
 	AUDIT_DEBUG_LOG("log_select_dml");
 
@@ -1164,6 +1165,161 @@ log_select_dml(Oid auditOid, List *rangeTabls)
 		AUDIT_DEBUG_LOG("WARNING: auditEventStack is NULL, returning");
 		return;
 	}
+
+
+	ListCell *lr1, *lr2;
+	bool found = false;
+
+	/* Do not log if this is an internal statement */
+	if (internalStatement)
+	{
+		return;
+	}
+	forboth(lr1, rangeTabls,lr2, permInfo)
+	{
+		Oid relOid;
+		Relation rel;
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lr1);
+                RTEPermissionInfo *perminfo = (RTEPermissionInfo*) lfirst(lr2);
+		/* We only care about tables, and can ignore subqueries etc. */
+		if (rte->rtekind != RTE_RELATION)
+		{
+			continue;
+		}
+
+		found = true;
+
+		relOid = rte->relid;
+		rel = relation_open(relOid, NoLock);
+
+		/*
+		 * Default is that this was not through a grant, to support session
+		 * logging.  Will be updated below if a grant is found.
+		 */
+		auditEventStack->auditEvent.granted = false;
+
+		/*
+		 * We don't have access to the parsetree here, so we have to generate
+		 * the node type, object type, and command tag by decoding
+		 * rte->requiredPerms and rte->relkind.
+		 */
+		if (perminfo->requiredPerms & ACL_INSERT)
+		{
+			initialize_insert_event(auditEventStack);
+		}
+		else if (perminfo->requiredPerms & ACL_UPDATE)
+		{
+			initialize_update_event(auditEventStack);
+		}
+		else if (perminfo->requiredPerms & ACL_DELETE)
+		{
+			initialize_delete_event(auditEventStack);
+		}
+		else if (perminfo->requiredPerms & ACL_SELECT)
+		{
+			initialize_select_event(auditEventStack);
+		}
+		else
+		{
+			relation_close(rel, NoLock);
+			continue;	// don't log from UNKNOWN
+		}
+
+		/* Use the relation type to assign object type */
+		switch (rte->relkind)
+		{
+		case RELKIND_RELATION:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_TABLE;
+			break;
+
+		case RELKIND_INDEX:
+#if PG_VERSION_NUM >= 110000
+		case RELKIND_PARTITIONED_INDEX:
+#endif
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_INDEX;
+			break;
+
+		case RELKIND_SEQUENCE:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_SEQUENCE;
+			break;
+
+		case RELKIND_TOASTVALUE:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_TOASTVALUE;
+			break;
+
+		case RELKIND_VIEW:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_VIEW;
+			break;
+
+		case RELKIND_COMPOSITE_TYPE:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_COMPOSITE_TYPE;
+			break;
+
+		case RELKIND_FOREIGN_TABLE:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_FOREIGN_TABLE;
+			break;
+
+		case RELKIND_MATVIEW:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_MATVIEW;
+			break;
+
+		default:
+			auditEventStack->auditEvent.objectType = OBJECT_TYPE_UNKNOWN;
+			break;
+		}
+
+		/* Get a copy of the relation name and assign it to object name */
+		auditEventStack->auditEvent.objectName =
+			quote_qualified_identifier(get_namespace_name(
+						RelationGetNamespace(rel)),
+					RelationGetRelationName(rel));
+		relation_close(rel, NoLock);
+
+		// Original pgaudit code set this based on different conditions
+		// We always log.
+		auditEventStack->auditEvent.granted = true;
+
+		/* Do relation level logging if a grant was found */
+		if (auditEventStack->auditEvent.granted)
+		{
+			auditEventStack->auditEvent.logged = false;
+			log_audit_event(auditEventStack);
+		}
+
+		pfree(auditEventStack->auditEvent.objectName);
+		auditEventStack->auditEvent.objectName = NULL;
+	}
+
+	/*
+	 * If no tables were found that means that RangeTbls was empty or all
+	 * relations were in the system schema.  In that case still log a session
+	 * record.
+	 */
+	if (!found)
+	{
+		auditEventStack->auditEvent.granted = false;
+		auditEventStack->auditEvent.logged = false;
+
+		log_audit_event(auditEventStack);
+	}
+}
+#else
+/*
+ * Create AuditEvents for SELECT/DML operations via executor permissions checks for
+   versions lower than Postgres 16.x
+ */
+static void
+log_select_dml_lower_versions(Oid auditOid, List *rangeTabls)
+{
+	AUDIT_DEBUG_LOG("log_select_dml_lower_versions");
+
+	if (auditEventStack == NULL)
+	{
+		// not using log level WARNING directly, so log message will not be presented to client but only to server log
+		AUDIT_DEBUG_LOG("WARNING: auditEventStack is NULL, returning");
+		return;
+	}
+
 
 	ListCell *lr;
 	bool found = false;
@@ -1302,6 +1458,7 @@ log_select_dml(Oid auditOid, List *rangeTabls)
 		log_audit_event(auditEventStack);
 	}
 }
+#endif
 
 /*
  * Create AuditEvents for non-catalog function execution, as detected by
@@ -1371,7 +1528,11 @@ log_function_execute(Oid objectId)
 /*
  * Hook functions
  */
+ #if PG_VERSION_NUM >= 160000
 static ExecutorCheckPerms_hook_type next_ExecutorCheckPerms_hook = NULL;
+#else
+static ExecutorCheckPerms_hook_type next_ExecutorCheckPerms_hook_lw_versions = NULL;
+#endif
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 static object_access_hook_type next_object_access_hook = NULL;
 static ExecutorStart_hook_type next_ExecutorStart_hook = NULL;
@@ -1721,8 +1882,9 @@ audit_ExecutorStart_hook(QueryDesc *queryDesc, int eflags)
 /*
  * Hook ExecutorCheckPerms to do session and object auditing for DML.
  */
+ #if PG_VERSION_NUM >= 160000
 static bool
-audit_ExecutorCheckPerms_hook(List *rangeTabls, bool abort1)
+audit_ExecutorCheckPerms_hook(List *rangeTabls, List *permInfo, bool abort1)
 {
 	AUDIT_DEBUG_LOG("audit_ExecutorCheckPerms_hook");
 
@@ -1734,18 +1896,58 @@ audit_ExecutorCheckPerms_hook(List *rangeTabls, bool abort1)
 	/* Log DML if the audit role is valid or session logging is enabled */
 	if (! IsAbortedTransactionBlockState())
 	{
-		log_select_dml(auditOid, rangeTabls);
+		#if PG_VERSION_NUM >= 160000
+        {
+		    log_select_dml(auditOid, rangeTabls, permInfo);
+		}
+		#else
+		{
+			log_select_dml_lower_versions(auditOid, rangeTabls);
+		}
+		#endif
 	}
 
 	/* Call the next hook function */
 	if (next_ExecutorCheckPerms_hook &&
-			!(*next_ExecutorCheckPerms_hook)(rangeTabls, abort1))
+		!(*next_ExecutorCheckPerms_hook)(rangeTabls, permInfo, abort1))
 	{
 		return false;
 	}
 
 	return true;
 }
+
+#else
+/*
+ * Hook ExecutorCheckPerms to do session and object auditing for DML
+ for versions lower than Postgres 16.x.
+ */
+static bool
+audit_ExecutorCheckPerms_hook_lower_versions(List *rangeTabls, bool abort1)
+{
+	AUDIT_DEBUG_LOG("audit_ExecutorCheckPerms_hook_lower_versions");
+
+	Oid auditOid = InvalidOid;
+
+	/* Get the audit oid if the role exists */
+	// auditOid = get_role_oid(auditRole, true);
+
+	/* Log DML if the audit role is valid or session logging is enabled */
+	if (! IsAbortedTransactionBlockState())
+	{
+		log_select_dml_lower_versions(auditOid, rangeTabls);
+	}
+
+	/* Call the next hook function */
+	if (next_ExecutorCheckPerms_hook_lw_versions &&
+			!(*next_ExecutorCheckPerms_hook_lw_versions)(rangeTabls, abort1))
+	{
+		return false;
+	}
+
+	return true;
+}
+#endif
 
 // create a full name for an object from catalog/schema/relation
 
@@ -3592,8 +3794,13 @@ _PG_init(void)
 	next_ExecutorStart_hook = ExecutorStart_hook;
 	ExecutorStart_hook = audit_ExecutorStart_hook;
 
+	#if PG_VERSION_NUM >= 160000
 	next_ExecutorCheckPerms_hook = ExecutorCheckPerms_hook;
 	ExecutorCheckPerms_hook = audit_ExecutorCheckPerms_hook;
+	#else
+	next_ExecutorCheckPerms_hook_lw_versions = ExecutorCheckPerms_hook;
+	ExecutorCheckPerms_hook = audit_ExecutorCheckPerms_hook_lower_versions;
+    #endif
 
 	next_ProcessUtility_hook = ProcessUtility_hook;
 	ProcessUtility_hook = audit_ProcessUtility_hook;
