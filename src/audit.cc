@@ -2267,9 +2267,15 @@ static const char *commandTagToString(enum CommandTag cmdTag)
 	case CMDTAG_UPDATE: return "UPDATE";
 	case CMDTAG_VACUUM: return "VACUUM";
 	case COMMAND_TAG_NEXTTAG: return "";
-        #if PG_VERSION_NUM >= 150000
-               case CMDTAG_MERGE: return "MERGE";
+	#if PG_VERSION_NUM >= 170000
+        case CMDTAG_LOGIN: return "LOGIN";
         #endif
+	#if PG_VERSION_NUM < 170000
+        case COMMAND_TAG_NEXTTAG: return "";
+        #endif
+    #if PG_VERSION_NUM >= 150000
+               case CMDTAG_MERGE: return "MERGE";
+    #endif
 	}
 	return "???";
 }
